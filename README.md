@@ -1,13 +1,25 @@
-# exeuntu
+# exeuntu (minimal)
 
-exeuntu is available at http://ghcr.io/boldsoftware/exeuntu
+A fork of [boldsoftware/exeuntu](https://github.com/boldsoftware/exeuntu), the
+exe.dev base image, with the exe.dev-specific parts removed: Shelley and its
+headless Chromium, the `exeuntu` helper CLI, the bundled coding agents and
+their exe.dev plugins, `/exe.dev/setup`, the MOTD, nginx and the exe.dev
+branding.
 
-exeuntu is the default base image for [exe.dev](https://exe.dev/). It is kitted-out
-for developers, based on ubuntu24.04, and includes systemd.
+What's left is an Ubuntu 26.04 dev box that boots systemd as PID 1 and acts
+like a small VM under [cyac](https://github.com/containmentzone/cyacrt):
 
-We believe that minimal containers make for terrible developer (and agent)
-experiences, so exeuntu includes a lot of stuff, mostly from apt.
+- `/usr/local/bin/init` mounts cgroup2 if needed and execs systemd.
+- The login user is `ubuntu` (uid 1000, passwordless sudo, lingering),
+  advertised with the `cyac.nullvoid.space/login-user` label.
+- `/etc/fstab` grows the root filesystem on `/dev/vda` at boot.
+- The host provides `/etc/resolv.conf`, `/etc/hosts` and `/etc/hostname`;
+  systemd-resolved is not installed.
+- Tools: build-essential, Go, Python with pipx and uv, git, gh, Docker
+  (started on first use through docker.socket), and the usual CLI basics.
 
-You can build exeuntu with Docker, but running it, including systemd, is
-difficult with Docker.
+Build it with `make`. Running systemd under plain Docker works with the
+flags in the Makefile's `run` target; the root grow unit fails there, since
+there is no `/dev/vda`.
 
+Apache 2.0, as upstream (see LICENSE).

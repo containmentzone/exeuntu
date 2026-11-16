@@ -1,156 +1,49 @@
 # syntax=docker/dockerfile:1
 
-# Stage 1: Get the headless-shell (Chromium) build Shelley's release metadata
-# advertises for this platform, so it matches what Shelley upgrades to.
-FROM docker.io/library/ubuntu:24.04 AS chrome
-ARG TARGETARCH
-SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
-RUN apt-get update && \
-	apt-get install -y --no-install-recommends ca-certificates curl jq && \
-	curl -fsSL --retry 5 --retry-all-errors -o /tmp/release.json https://boldsoftware.github.io/shelley/release.json && \
-	build=$(jq -ce --arg p "linux_$TARGETARCH" '.headless_shells[$p] // error("no headless_shells.\($p) in release.json")' /tmp/release.json) && \
-	version=$(jq -r .version <<<"$build") && \
-	url=$(jq -r .url <<<"$build") && \
-	[[ $url == https://github.com/boldsoftware/shelley/releases/download/headless-shell/v"${version#Chromium }"/* ]] && \
-	curl -fsSL --retry 5 --retry-all-errors -o /tmp/headless-shell.tar.gz "$url" && \
-	tar -xzf /tmp/headless-shell.tar.gz -C / --no-same-owner && \
-	[[ -x /headless-shell/headless-shell ]] && \
-	# Record the release, which the binary's --version can't show, for Shelley's version check.
-	sum=$(sha256sum /headless-shell/headless-shell | cut -d' ' -f1) && \
-	printf '%s\nsha256 %s\n' "$version" "$sum" > /headless-shell/headless-shell-version.txt
+# A general-purpose Ubuntu 26.04 dev box that boots systemd as PID 1, forked
+# from exe.dev's exeuntu with the exe.dev-specific parts removed.
+FROM docker.io/library/ubuntu:26.04
 
-# Build the guest-facing exeuntu helper.
-FROM docker.io/library/golang:1.27.4 AS exeuntu-cli
-ARG EXEUNTU_GIT_VERSION=unknown
-WORKDIR /src/exeuntu-cli
-COPY cli/ ./
-RUN CGO_ENABLED=0 GOOS=linux go build -mod=mod -tags osusergo,netgo \
-        -ldflags "-X main.gitVersion=${EXEUNTU_GIT_VERSION} -extldflags=-static -s -w" \
-        -o /out/exeuntu .
-
-FROM ubuntu:24.04
-
-# Switch from dash to bash by default.
 SHELL ["/bin/bash", "-euxo", "pipefail", "-c"]
 
-
-# Remove minimization restrictions and install packages with documentation
-# We aim for a usable non-minimal system.
-RUN sed -i 's|http://archive.ubuntu.com/ubuntu/|http://mirror://mirrors.ubuntu.com/mirrors.txt|' /etc/apt/sources.list && \
-        rm -f /etc/dpkg/dpkg.cfg.d/excludes /etc/dpkg/dpkg.cfg.d/01_nodoc && \
-	apt-get update && \
-	# Pull in all available security/bugfix updates for packages already
-	# in the base ubuntu:24.04 image. Without this we ship whatever was
-	# current when Canonical last rebuilt the base layer, which can be
-	# months behind (e.g. nginx Rift, CVE-2026-42945). The weekly cron
-	# rebuild + no-cache will keep this fresh going forward.
+RUN apt-get update && \
+	# Pull in fixes for packages already in the base layer.
 	DEBIAN_FRONTEND=noninteractive apt-get -y \
 		-o Dpkg::Options::=--force-confold \
 		-o Dpkg::Options::=--force-confdef \
 		dist-upgrade && \
-	# Pre-configure debconf to avoid interactive prompts
-	echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections && \
-	# Pre-configure pbuilder to avoid mirror prompt
-	echo 'pbuilder pbuilder/mirrorsite string http://archive.ubuntu.com/ubuntu' | debconf-set-selections && \
-	# Run unminimize with single 'y' response to restore documentation
-	echo 'y' | DEBIAN_FRONTEND=noninteractive unminimize && \
-	# Install man-db and reinstall all base packages to get their man pages back
-	DEBIAN_FRONTEND=noninteractive apt-get install -y man-db && \
-	DEBIAN_FRONTEND=noninteractive apt-get install -y --reinstall $(dpkg-query -f '${binary:Package} ' -W) && \
-	mandb -c && \
-	DEBIAN_FRONTEND=noninteractive apt-get install -y \
-		ca-certificates wget ripgrep \
-		locales locales-all \
-		git jq sqlite3 curl vim neovim lsof iproute2 less nginx \
-		make python3-pip python-is-python3 tree net-tools file build-essential \
-		pipx psmisc bsdmainutils sudo socat \
-		openssh-server openssh-client \
-		libcap2-bin unzip util-linux rsync \
-		iputils-ping socat netcat-openbsd \
-		ubuntu-server ubuntu-dev-tools ubuntu-standard \
-		man-db manpages manpages-dev \
-		mitmproxy \
-		systemd systemd-sysv \
-		atop btop iotop ncdu \
-		git \
-		libglib2.0-0 libnss3 libnss3-tools libx11-6 libxcomposite1 libxdamage1 \
-		libxext6 libxi6 libxrandr2 libgbm1 libgtk-3-0 \
-		fonts-noto-color-emoji fonts-symbola \
-		docker.io docker-buildx docker-compose-v2 \
-		imagemagick ffmpeg \
-		bubblewrap \
-		dbus-user-session \
-		&& apt-get remove -y pollinate ubuntu-fan && \
-		# openssh-server generates host keys during package configuration.
-		# Do not bake those per-image private keys into exeuntu.
-		rm -f /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub && \
-		# Allow non-root users to use ping without sudo by granting CAP_NET_RAW
-		setcap cap_net_raw=+ep /usr/bin/ping && \
-	fc-cache -f -v && \
-	# Remove policy-rc.d so services can start normally (the base image includes this
-	# to prevent services from starting during build, but we run systemd at runtime)
-	rm -f /usr/sbin/policy-rc.d
+	DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+		systemd systemd-sysv dbus dbus-user-session libpam-systemd \
+		ca-certificates curl wget gnupg locales sudo less file tree \
+		vim-nox neovim git jq ripgrep sqlite3 unzip rsync man-db manpages \
+		build-essential make golang-go python3-pip python-is-python3 pipx \
+		iproute2 iputils-ping net-tools netcat-openbsd socat openssh-client \
+		lsof psmisc procps htop btop ncdu libcap2-bin bubblewrap \
+		docker.io docker-buildx docker-compose-v2 && \
+	locale-gen en_US.UTF-8 && \
+	# Allow non-root users to use ping without sudo.
+	setcap cap_net_raw=+ep /usr/bin/ping && \
+	# The base image ships this to stop services starting during the build;
+	# at runtime systemd is in charge.
+	rm -f /usr/sbin/policy-rc.d && \
+	rm -rf /var/lib/apt/lists/*
 
 ARG GH_VERSION=2.97.0
-
-# CI overrides GH_VERSION with the newest stable release older than five days.
 RUN --mount=type=bind,source=install-gh.sh,target=/tmp/install-gh.sh \
 	bash /tmp/install-gh.sh "${GH_VERSION}" && \
 	gh --version
 
-# Install Tailscale (keyring method, per https://tailscale.com/install.sh)
-# This must run after ca-certificates and curl are installed.
-RUN curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg -o /usr/share/keyrings/tailscale-archive-keyring.gpg && \
-    curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.tailscale-keyring.list -o /etc/apt/sources.list.d/tailscale.list && \
-    apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y tailscale && \
-    # Require a release with the x/crypto and x/image security fixes.
-    dpkg --compare-versions "$(dpkg-query -W -f '${Version}' tailscale)" ge 1.104.1 && \
-    tailscale version
+# The host writes /etc/resolv.conf; systemd-resolved would fight it.
+RUN if dpkg -s systemd-resolved >/dev/null 2>&1; then apt-get purge -y systemd-resolved; fi
 
-# exe-init manages DNS directly. The unused resolvconf shim makes Tailscale
-# misdetect its own DNS configuration as openresolv (tailscale/tailscale#19062).
-RUN apt-get purge -y systemd-resolved
-
-# Install latest stable Go from go.dev (the golang-go apt package lags behind)
-RUN ARCH=$(dpkg --print-architecture) && \
-    GO_VERSION=$(curl -fsSL 'https://go.dev/dl/?mode=json' | jq -r '.[0].version') && \
-    curl -fsSL "https://go.dev/dl/${GO_VERSION}.linux-${ARCH}.tar.gz" | tar -xzC /usr/local && \
-    ln -s /usr/local/go/bin/go /usr/local/bin/go && \
-    ln -s /usr/local/go/bin/gofmt /usr/local/bin/gofmt
-
-COPY --from=exeuntu-cli /out/exeuntu /usr/local/bin/exeuntu
-
-# Install uv to /usr/local/bin
 RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
 
-# Install the DuckDB CLI (a single static binary).
-ARG DUCKDB_VERSION=1.5.5
-RUN ARCH=$(dpkg --print-architecture) && \
-    curl -fsSL "https://install.duckdb.org/v${DUCKDB_VERSION}/duckdb_cli-linux-${ARCH}.zip" -o /tmp/duckdb.zip && \
-    unzip -o /tmp/duckdb.zip -d /usr/local/bin duckdb && \
-    rm /tmp/duckdb.zip && \
-    chmod 0755 /usr/local/bin/duckdb && \
-    duckdb --version
-
-# Configure systemd
-RUN rm /etc/systemd/system/multi-user.target.wants/console-setup.service \
-		/etc/systemd/system/multi-user.target.wants/ModemManager.service \
-		/etc/systemd/system/multi-user.target.wants/snapd.* \
-		/etc/systemd/system/multi-user.target.wants/unattended-upgrades.* \
-		/etc/systemd/system/multi-user.target.wants/ubuntu-advantage.service && \
-	systemctl mask -- getty.target \
-		fwupd.service \
-		fwupd-refresh.service \
-		fwupd-refresh.timer \
+# Configure systemd for a VM-like box with no consoles, udev or modules of its
+# own: the host sets up devices, /etc/hosts, /etc/hostname and resolv.conf.
+RUN systemctl mask -- \
+		getty.target \
+		console-getty.service \
 		systemd-random-seed.service \
-		iscsid.socket \
-		dm-event.socket \
-		man-db.timer \
-		update-notifier-download.timer \
-		update-notifier-motd.timer \
-		atop-rotate.timer \
-		dpkg-db-backup.timer \
-		e2scrub_all.timer \
 		etc-resolv.conf.mount \
 		etc-hosts.mount \
 		etc-hostname.mount \
@@ -163,262 +56,65 @@ RUN rm /etc/systemd/system/multi-user.target.wants/console-setup.service \
 		modprobe@.service \
 		systemd-modules-load.service \
 		systemd-udevd.service \
-		systemd-udevd-control.service \
-		systemd-udevd-kernel.service \
+		systemd-udevd-control.socket \
+		systemd-udevd-kernel.socket \
 		systemd-udev-trigger.service \
 		systemd-udev-settle.service \
 		systemd-hwdb-update.service \
-		ubuntu-fan.service \
 		ldconfig.service \
-		unattended-upgrades.service \
-		lxd-installer.socket \
-	        console-getty.service \
-		keyboard-setup.service \
 		systemd-ask-password-console.path \
 		systemd-ask-password-wall.path \
-		ssh.socket \
-		ssh.service \
-		plymouth.service \
-		plymouth-start.service \
-		plymouth-quit.service \
-		plymouth-quit-wait.service \
-		plymouth-read-write.service \
-		plymouth-switch-root.service \
-		plymouth-switch-root-initramfs.service \
-		plymouth-halt.service \
-		plymouth-reboot.service \
-		plymouth-poweroff.service \
-		plymouth-kexec.service \
+		man-db.timer \
+		dpkg-db-backup.timer \
+		e2scrub_all.timer \
 		apt-daily-upgrade.timer \
-		apt-daily.timer \
-		plymouth-log.service && \
-	# systemd-logind is disabled but not masked. It's involved in populating the XDG runtime dir sockets... somehow
-	systemctl disable docker.service containerd.service getty.target systemd-logind.service tailscaled.service \
-		nginx.service \
-                   console-getty.service \
-		   atop.service \
-                   getty@.service \
-                   snapd.socket \
-		   motd-news.timer motd-news.service \
-		    apport.service apport-autoreport.timer apport-autoreport.path apport-forward.socket \
-		    snapd.snap-repair.timer snapd.snap-repair.service \
-		    udisks2.service \
-		   ufw.service \
-		   lvm2-lvmpolld.socket \
-                   systemd-ask-password-wall.service \
-                   systemd-ask-password-console.service \
-                   systemd-machine-id-commit.service \
-                   systemd-modules-load.service \
-                   systemd-sysctl.service \
-                   systemd-firstboot.service \
-                   systemd-udevd.service \
-                   systemd-udev-trigger.service \
-                   systemd-udev-settle.service \
-		   e2scrub_reap.service \
-		   systemd-update-utmp.service \
-		   atopacct.service \
-		   sysstat.service \
-                   systemd-hwdb-update.service \
-		   multipathd.service && \
-	mkdir -p /etc/systemd/system.conf.d && \
-    		echo '[Manager]' > /etc/systemd/system.conf.d/container-overrides.conf && \
-    		echo 'LogLevel=info' >> /etc/systemd/system.conf.d/container-overrides.conf && \
-    		echo 'LogTarget=console' >> /etc/systemd/system.conf.d/container-overrides.conf && \
-    		echo 'SystemCallArchitectures=native' >> /etc/systemd/system.conf.d/container-overrides.conf && \
-    		echo 'DefaultOOMPolicy=continue' >> /etc/systemd/system.conf.d/container-overrides.conf && \
-	mkdir -p /etc/systemd/journald.conf.d && \
-		echo '[Journal]' > /etc/systemd/journald.conf.d/persistent.conf && \
-		echo 'Storage=persistent' >> /etc/systemd/journald.conf.d/persistent.conf && \
+		apt-daily.timer && \
+	# docker.socket stays enabled, so Docker starts on first use.
+	systemctl disable docker.service containerd.service systemd-logind.service && \
+	mkdir -p /etc/systemd/system.conf.d /etc/systemd/journald.conf.d && \
+	printf '%s\n' '[Manager]' 'LogLevel=info' 'LogTarget=console' \
+		'SystemCallArchitectures=native' 'DefaultOOMPolicy=continue' \
+		> /etc/systemd/system.conf.d/container-overrides.conf && \
+	printf '%s\n' '[Journal]' 'Storage=persistent' \
+		> /etc/systemd/journald.conf.d/persistent.conf && \
 	systemctl set-default multi-user.target
 
-# Modify existing ubuntu user (UID 1000) to become exedev user
-RUN usermod -l exedev -c "exe.dev user" ubuntu && \
-	groupmod -n exedev ubuntu && \
-	mv /home/ubuntu /home/exedev && \
-	usermod -d /home/exedev exedev && \
-	usermod -aG sudo exedev && \
-	usermod -aG docker exedev && \
-	sed -i 's/^ubuntu:/exedev:/' /etc/subuid /etc/subgid && \
-	echo 'exedev ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && \
-	echo 'Defaults:exedev verifypw=any' >> /etc/sudoers && \
-	# Manually enable linger, this should autopopulate /run/user/1000
+# The login user is the base image's ubuntu (uid 1000), with passwordless sudo
+# and lingering so its user manager runs without a login.
+RUN usermod -aG sudo,docker ubuntu && \
+	echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/ubuntu && \
+	chmod 0440 /etc/sudoers.d/ubuntu && \
 	mkdir -p /var/lib/systemd/linger && \
-	touch /var/lib/systemd/linger/exedev
+	touch /var/lib/systemd/linger/ubuntu
 
-# Bake /etc/fstab so systemd-growfs@-.service resizes the root filesystem on
-# first boot after the disk is grown.
+# systemd-growfs@-.service grows the root filesystem when the disk grows.
 RUN echo '/dev/vda / ext4 defaults,x-systemd.growfs 0 1' > /etc/fstab
 
-# Stop systemd wiping /tmp at boot; that races non-systemd users of the system
-# that also run at boot.
 COPY tmpfiles-tmp.conf /etc/tmpfiles.d/tmp.conf
 
-ENV EXEUNTU=1
-
-# https://github.com/trfore/docker-ubuntu2404-systemd/blob/main/Dockerfile suggests the following
-# might be useful?
-# STOPSIGNAL SIGRTMIN+3
-
-
-# Copy the self-contained Chrome bundle
-COPY --from=chrome /headless-shell /headless-shell
-ENV PATH="/usr/local/bin:/headless-shell:${PATH}"
-
-RUN mkdir -p /home/exedev /home/exedev/.config/shelley && \
-    chown exedev:exedev /home/exedev /home/exedev/.config /home/exedev/.config/shelley
-
-USER exedev
-
-WORKDIR /home/exedev
-
-# Update PATH in .bashrc to include .local/bin and set XDG_RUNTIME_DIR for systemd user services
-# XDG paths are not autopopulated despite the presense of libpam-systemd. Manually add them here.
-RUN echo 'export PATH="$HOME/.local/bin:$PATH"' >> /home/exedev/.bashrc && \
-    echo 'export XDG_RUNTIME_DIR="/run/user/$(id -u)"' >> /home/exedev/.bashrc && \
-    echo 'export XDG_RUNTIME_DIR="/run/user/$(id -u)"' >> /home/exedev/.profile
-
-# Configure git to use 'main' as default branch name
-RUN git config --global init.defaultBranch main
-
-# Chromium blocks the compromised eMudhra intermediates only since
-# 156.0.8078.69 and 157.0.8103.20; distrust the root above them in exedev's
-# NSS database, which older builds honor too.
-RUN --mount=type=bind,source=distrust-emudhra.sh,target=/tmp/distrust-emudhra.sh \
-	bash /tmp/distrust-emudhra.sh && \
-	certutil -L -d sql:/home/exedev/.pki/nssdb | grep -q '^distrusted emSign ECC Root CA - G3  *p,p,p$'
-
-# Pre-install the DuckDB extensions the look integration's usage text needs
-# (httpfs for s3://, iceberg for iceberg_scan; iceberg loads avro itself) into
-# ~/.duckdb/extensions, so the first query works without a runtime download.
-# Extensions are per-user and per-DuckDB-version, so this must run as exedev
-# after the CLI.
-RUN duckdb -c "INSTALL httpfs; INSTALL iceberg; INSTALL avro;" && \
-    duckdb -c "SET autoinstall_known_extensions=false; LOAD httpfs; LOAD iceberg; LOAD avro;"
-
-# Switch back to root to install systemd service
-USER root
-
-# Disable Ubuntu's default MOTD (the sudo hint, etc.)
-RUN rm -rf /etc/update-motd.d/* /etc/motd && touch /home/exedev/.hushlogin && chown exedev:exedev /home/exedev/.hushlogin
-
-# Add custom MOTD to exedev's .bashrc (ignores .hushlogin - we handle that ourselves)
-COPY motd-snippet.bash /tmp/motd-snippet.bash
-RUN cat /tmp/motd-snippet.bash >> /home/exedev/.bashrc && rm /tmp/motd-snippet.bash
-
-# Create systemd socket and service for Shelley (socket activation).
-# The shelley binary itself is installed at vm creation.
-COPY shelley.socket /etc/systemd/system/shelley.socket
-COPY shelley.service /etc/systemd/system/shelley.service
-COPY tmpfiles-shelley.conf /etc/tmpfiles.d/shelley.conf
-RUN chmod 644 /etc/systemd/system/shelley.socket /etc/systemd/system/shelley.service && \
-    systemctl enable shelley.socket
-
-# Create systemd oneshot service for /exe.dev/setup script
-COPY exe-setup.service /etc/systemd/system/exe-setup.service
-RUN chmod 644 /etc/systemd/system/exe-setup.service && \
-    systemctl enable exe-setup.service
-
-# TODO(crawshaw/philip): This is called init so that exetini decides
-# this wrapper script is an init, and exec's it rather than forking it.
-# It would be better if you could indicate that via an env variable or something.
-COPY init-wrapper.sh /usr/local/bin/init
-
-# Create config directories for LLM agents. `exeuntu update opencode`
-# installs OpenCode's exe.dev plugin and config under /etc/opencode.
-RUN mkdir -p \
-      /home/exedev/.claude \
-      /home/exedev/.codex \
-      /home/exedev/.pi \
-      /home/exedev/.config/opencode && \
-    chown -R exedev:exedev /home/exedev/.claude /home/exedev/.codex /home/exedev/.pi /home/exedev/.config/opencode
-
-# Copy LLM agent instructions to Claude, Codex, OpenCode, Pi, and Shelley config directories
-# Shelley and OpenCode use ~/.config/ (XDG convention).
-COPY AGENTS.md /home/exedev/.config/shelley/AGENTS.md
-RUN chown exedev:exedev /home/exedev/.config/shelley/AGENTS.md && \
-    ln -s /home/exedev/.config/shelley/AGENTS.md /home/exedev/.claude/CLAUDE.md && \
-    ln -s /home/exedev/.config/shelley/AGENTS.md /home/exedev/.codex/AGENTS.md && \
-    ln -s /home/exedev/.config/shelley/AGENTS.md /home/exedev/.config/opencode/AGENTS.md && \
-    ln -s /home/exedev/.config/shelley/AGENTS.md /home/exedev/.pi/AGENTS.md
-
-# Install Claude, Codex, and OpenCode through exeuntu's direct updaters.
-USER root
-RUN exeuntu update claude && \
-    test -x /usr/local/bin/claude && \
-    /usr/local/bin/claude --version
-RUN exeuntu update codex && \
-    test -x /usr/local/bin/codex && \
-    /usr/local/bin/codex --version
-RUN exeuntu update opencode && \
-    test -x /usr/local/bin/opencode && \
-    test -f /etc/opencode/plugins/exe-dev.js && \
-    HOME=/tmp/opencode-smoke /usr/local/bin/opencode --version && \
-    rm -rf /tmp/opencode-smoke
-
-# Install pi (pi-coding-agent) through exeuntu's updater.
-ARG PI_VERSION=
-USER exedev
-RUN if [ -n "${PI_VERSION}" ]; then \
-        exeuntu update pi --home /home/exedev --version "${PI_VERSION}"; \
-    else \
-        exeuntu update pi --home /home/exedev; \
-    fi && \
-    test -x /home/exedev/.local/bin/pi && \
-    /home/exedev/.local/bin/pi --version
-USER root
-RUN ln -sf /home/exedev/.local/bin/pi /usr/local/bin/pi
-
-# Install the pi exe.dev extension (LLM integration + environment context).
-# The bundled public catalog supplies pricing and compatibility metadata only;
-# reflection-discovered integrations supply every model and provider route.
-COPY pi-extension/ /home/exedev/.pi/agent/extensions/exe-dev/
-RUN curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors --max-time 30 \
-      https://exe.dev/llm-gateway-models.json \
-      -o /home/exedev/.pi/agent/extensions/exe-dev/catalog.json && \
-    jq -e '.schemaVersion | numbers' \
-      /home/exedev/.pi/agent/extensions/exe-dev/catalog.json > /dev/null
-RUN chown -R exedev:exedev /home/exedev/.pi/agent
-
-# Pre-install fd at the path pi checks first (~/.pi/agent/bin/fd), so pi
-# doesn't try (and on a fresh VM, often fail with a GitHub API 403) to
-# download it on first use.
-RUN ARCH=$(uname -m) && \
-    case ${ARCH} in \
-        x86_64) FD_ARCH="x86_64-unknown-linux-gnu" ;; \
-        aarch64|arm64) FD_ARCH="aarch64-unknown-linux-gnu" ;; \
-        *) echo "Unsupported architecture: ${ARCH}" && exit 1 ;; \
-    esac && \
-    FD_VERSION=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/sharkdp/fd/releases/latest | sed 's|.*/tag/||') && \
-    mkdir -p /home/exedev/.pi/agent/bin && \
-    TMPDIR=$(mktemp -d) && \
-    curl -fsSL "https://github.com/sharkdp/fd/releases/download/${FD_VERSION}/fd-${FD_VERSION}-${FD_ARCH}.tar.gz" | \
-        tar -xz -C "${TMPDIR}" && \
-    mv "${TMPDIR}/fd-${FD_VERSION}-${FD_ARCH}/fd" /home/exedev/.pi/agent/bin/fd && \
-    rm -rf "${TMPDIR}" && \
-    chmod 0755 /home/exedev/.pi/agent/bin/fd && \
-    chown -R exedev:exedev /home/exedev/.pi/agent/bin
-
-# Custom nginx config and index page (nginx is installed but disabled by default)
-COPY nginx.conf /etc/nginx/sites-available/default
-COPY index.html /var/www/html/index.html
-RUN chmod 644 /var/www/html/index.html
-
-# Install xterm-ghostty terminfo for Ghostty terminal support
 COPY xterm-ghostty.terminfo /tmp/xterm-ghostty.terminfo
 RUN tic -x - < /tmp/xterm-ghostty.terminfo && rm /tmp/xterm-ghostty.terminfo
 
-# Empty the machine ID baked in by package configuration, so each VM built from
-# this image generates its own on first boot. A shared one defeats anything that
-# assumes machine IDs are unique, such as systemd's FixedRandomDelay=. Empty
-# rather than removed: systemd reads an absent /etc/machine-id as a first boot
-# and presets all units, re-enabling the ones disabled above. Keep this last, so
-# that no apt-get install bakes in a new ID.
+USER ubuntu
+WORKDIR /home/ubuntu
+RUN echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && \
+	echo 'export XDG_RUNTIME_DIR="/run/user/$(id -u)"' >> ~/.bashrc && \
+	echo 'export XDG_RUNTIME_DIR="/run/user/$(id -u)"' >> ~/.profile && \
+	touch ~/.hushlogin && \
+	git config --global init.defaultBranch main
+USER root
+
+RUN rm -rf /etc/update-motd.d/* /etc/motd
+
+# Named init so runtimes that look for an init (cyac, exe.dev's exetini) exec
+# it as PID 1 rather than forking it.
+COPY init-wrapper.sh /usr/local/bin/init
+
+# Empty, not removed: each box generates its own machine ID on first boot,
+# and an absent file would make systemd preset (re-enable) every unit. Keep
+# this last, so no later apt-get install bakes in an ID.
 RUN : > /etc/machine-id && \
 	ln -sf /etc/machine-id /var/lib/dbus/machine-id
 
-# Expose the web server ports
-EXPOSE 8000 9999
-
-LABEL "exe.dev/login-user"="exedev"
-LABEL "exe.dev/install-shelley"="true"
+LABEL "cyac.nullvoid.space/login-user"="ubuntu"
 CMD ["/usr/local/bin/init"]
