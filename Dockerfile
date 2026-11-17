@@ -92,6 +92,10 @@ RUN echo '/dev/vda / ext4 defaults,x-systemd.growfs 0 1' > /etc/fstab
 
 COPY tmpfiles-tmp.conf /etc/tmpfiles.d/tmp.conf
 
+# cyac networks are IPv4-only; without this apt tries every AAAA first and
+# prints a "Network is unreachable" line for each before falling back.
+RUN echo 'Acquire::ForceIPv4 "true";' > /etc/apt/apt.conf.d/99force-ipv4
+
 COPY xterm-ghostty.terminfo /tmp/xterm-ghostty.terminfo
 RUN tic -x - < /tmp/xterm-ghostty.terminfo && rm /tmp/xterm-ghostty.terminfo
 
