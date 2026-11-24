@@ -110,9 +110,13 @@ RUN usermod -aG sudo,docker ubuntu && \
 	mkdir -p /var/lib/systemd/linger && \
 	touch /var/lib/systemd/linger/ubuntu
 
-# Start pi (with the web UI) in the login user's user manager at boot.
+# Start pi (with the web UI) in ubuntu's user manager at boot. Enabled for
+# ubuntu only, not --global: there is one port 8787 to bind.
 COPY pi.service /etc/systemd/user/pi.service
-RUN systemctl --global enable pi.service
+RUN wants=/home/ubuntu/.config/systemd/user/default.target.wants && \
+	mkdir -p "$wants" && \
+	ln -s /etc/systemd/user/pi.service "$wants/pi.service" && \
+	chown -R ubuntu:ubuntu /home/ubuntu/.config
 
 # systemd-growfs@-.service grows the root filesystem when the disk grows.
 RUN echo '/dev/vda / ext4 defaults,x-systemd.growfs 0 1' > /etc/fstab
