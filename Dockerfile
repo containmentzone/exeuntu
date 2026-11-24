@@ -18,7 +18,7 @@ RUN apt-get update && \
 		vim-nox neovim git jq ripgrep sqlite3 unzip rsync man-db manpages \
 		build-essential make golang-go python3-pip python-is-python3 pipx \
 		iproute2 iputils-ping net-tools netcat-openbsd socat openssh-client \
-		lsof psmisc procps htop btop ncdu libcap2-bin bubblewrap \
+		lsof psmisc procps htop btop ncdu tmux libcap2-bin bubblewrap \
 		docker.io docker-buildx docker-compose-v2 && \
 	locale-gen en_US.UTF-8 && \
 	# Allow non-root users to use ping without sudo.
@@ -109,6 +109,10 @@ RUN usermod -aG sudo,docker ubuntu && \
 	chmod 0440 /etc/sudoers.d/ubuntu && \
 	mkdir -p /var/lib/systemd/linger && \
 	touch /var/lib/systemd/linger/ubuntu
+
+# Start pi (with the web UI) in the login user's user manager at boot.
+COPY pi.service /etc/systemd/user/pi.service
+RUN systemctl --global enable pi.service
 
 # systemd-growfs@-.service grows the root filesystem when the disk grows.
 RUN echo '/dev/vda / ext4 defaults,x-systemd.growfs 0 1' > /etc/fstab

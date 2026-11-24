@@ -20,12 +20,13 @@ like a small VM under [cyac](https://github.com/containmentzone/cyacrt):
   basics.
 - The [pi](https://github.com/earendil-works/pi) coding agent, with
   [pi-web-cyac](https://github.com/containmentzone/pi-web-cyac) installed
-  for `ubuntu`: run `pi` and type `/web`, or start it with
-  `PI_WEB_AUTOSTART=1 pi`. It listens on 127.0.0.1:8787 and has no login
-  of its own. To reach it from outside, set `PI_WEB_HOST` to the box's
-  address and `cyac expose <box> 8787` (the proxy asks for a token, but
-  other boxes on the same network can reach that address directly), or to
-  a Tailscale address, rather than to every interface.
+  for `ubuntu`. The user unit `pi.service` starts it at boot as `ubuntu`,
+  in tmux (`tmux -L pi attach` to get the TUI), with the web UI on port
+  8787 on all interfaces, so the cyac proxy can reach it at the box's
+  address. The web UI has no login of its own: the proxy asks for the box
+  token, but other boxes on the same network reach it directly. Put
+  overrides such as `PI_WEB_HOST=127.0.0.1` in `~/.config/pi-web.env`, and
+  `systemctl --user stop pi` stops it.
 
 pi-web-cyac comes from GitHub Packages, which needs a token with
 `read:packages` even to install. The build takes it as the BuildKit secret

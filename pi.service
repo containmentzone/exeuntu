@@ -1,0 +1,20 @@
+# pi with its web UI on port 8787, for the login user. pi is a TUI and needs a
+# terminal, so it runs in tmux on its own socket: `tmux -L pi attach`.
+[Unit]
+Description=pi coding agent with the web UI
+
+[Service]
+Type=forking
+# All interfaces, so the cyac proxy reaches it at the box's address (it asks
+# for the box token there). The web UI has no login of its own.
+Environment=PI_WEB_AUTOSTART=1 PI_WEB_HOST=0.0.0.0
+# Overrides, e.g. PI_WEB_HOST=127.0.0.1 or a Tailscale address.
+EnvironmentFile=-%h/.config/pi-web.env
+WorkingDirectory=%h
+ExecStart=/usr/bin/tmux -L pi new-session -d -s pi /usr/local/bin/pi
+ExecStop=/usr/bin/tmux -L pi kill-server
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
