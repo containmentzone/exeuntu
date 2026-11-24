@@ -23,7 +23,8 @@ like a small VM under [cyac](https://github.com/containmentzone/cyacrt):
   for `ubuntu`. The user unit `pi.service` starts it at boot as `ubuntu`,
   in tmux (`tmux -L pi attach` to get the TUI), with the web UI on port
   8787 on all interfaces, so the cyac proxy can reach it at the box's
-  address. The web UI has no login of its own: the proxy asks for the box
+  address. The label `cyac.nullvoid.space/expose.pi=8787` makes
+  `cyac expose <box>` serve it at `pi.<box>.<root domain>`. The web UI has no login of its own: the proxy asks for the box
   token, but other boxes on the same network reach it directly. Put
   overrides such as `PI_WEB_HOST=127.0.0.1` in `~/.config/pi-web.env`, and
   `systemctl --user stop pi` stops it.

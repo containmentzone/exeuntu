@@ -161,4 +161,6 @@ RUN : > /etc/machine-id && \
 	ln -sf /etc/machine-id /var/lib/dbus/machine-id
 
 LABEL "cyac.nullvoid.space/login-user"="ubuntu"
+# `cyac expose <box>` serves pi.service's web UI at pi.<box>.<root domain>.
+LABEL "cyac.nullvoid.space/expose.pi"="8787"
 CMD ["/usr/local/bin/init"]
