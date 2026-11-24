@@ -14,7 +14,7 @@ RUN apt-get update && \
 		dist-upgrade && \
 	DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
 		systemd systemd-sysv dbus dbus-user-session libpam-systemd \
-		ca-certificates curl wget gnupg locales sudo less file tree \
+		ca-certificates curl wget gnupg locales sudo less file tree xz-utils \
 		vim-nox neovim git jq ripgrep sqlite3 unzip rsync man-db manpages \
 		build-essential make golang-go python3-pip python-is-python3 pipx \
 		iproute2 iputils-ping net-tools netcat-openbsd socat openssh-client \
@@ -37,6 +37,29 @@ RUN --mount=type=bind,source=install-gh.sh,target=/tmp/install-gh.sh \
 RUN if dpkg -s systemd-resolved >/dev/null 2>&1; then apt-get purge -y systemd-resolved; fi
 
 RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+
+# Node.js from nodejs.org (pi needs >= 22.19, newer than some distro builds),
+# checked against the release's SHASUMS256.txt.
+ARG NODE_VERSION=24.22.3
+RUN case "$(dpkg --print-architecture)" in \
+		amd64) arch=x64 ;; arm64) arch=arm64 ;; \
+		*) echo "no Node.js build for $(dpkg --print-architecture)"; exit 1 ;; \
+	esac && \
+	tarball="node-v${NODE_VERSION}-linux-${arch}.tar.xz" && \
+	cd /tmp && \
+	curl -fsSLO "https://nodejs.org/dist/v${NODE_VERSION}/${tarball}" && \
+	curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt" | grep " ${tarball}\$" | sha256sum -c - && \
+	tar -xJf "${tarball}" -C /usr/local --strip-components=1 --no-same-owner \
+		--exclude CHANGELOG.md --exclude LICENSE --exclude README.md && \
+	rm "${tarball}" && \
+	node --version && npm --version
+
+# The pi coding agent, system-wide. pi's own self-update needs sudo here,
+# which the login user has.
+ARG PI_VERSION=1.5.2
+RUN npm install -g --no-fund --no-audit "@earendil-works/pi-coding-agent@${PI_VERSION}" && \
+	npm cache clean --force && \
+	pi --version
 
 # Configure systemd for a VM-like box with no consoles, udev or modules of its
 # own: the host sets up devices, /etc/hosts, /etc/hostname and resolv.conf.
@@ -102,6 +125,23 @@ RUN echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && \
 	echo 'export XDG_RUNTIME_DIR="/run/user/$(id -u)"' >> ~/.profile && \
 	touch ~/.hushlogin && \
 	git config --global init.defaultBranch main
+
+# The pi web UI (/web), as a personal pi package of the login user. It comes
+# from GitHub Packages, which needs a read:packages token even to install, so
+# the build takes the token as the secret npm_token (see the README). It only
+# ever sits in a tmpfs, so it never lands in a layer or the build log. The
+# image keeps just the scope-to-registry line, so a later `pi update` needs
+# only a token added to ~/.npmrc.
+ARG PI_WEB_VERSION=
+RUN --mount=type=secret,id=npm_token,uid=1000,required=true \
+	--mount=type=tmpfs,target=/tmp/npm \
+	printf '%s\n' '@containmentzone:registry=https://npm.pkg.github.com' > ~/.npmrc && \
+	cp ~/.npmrc /tmp/npm/npmrc && \
+	sed -n '1s|^|//npm.pkg.github.com/:_authToken=|p' /run/secrets/npm_token >> /tmp/npm/npmrc && \
+	NPM_CONFIG_USERCONFIG=/tmp/npm/npmrc \
+		pi install "npm:@containmentzone/pi-web-cyac${PI_WEB_VERSION:+@${PI_WEB_VERSION}}" && \
+	pi list && \
+	rm -rf ~/.npm
 USER root
 
 RUN rm -rf /etc/update-motd.d/* /etc/motd

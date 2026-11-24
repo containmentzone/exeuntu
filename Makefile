@@ -2,7 +2,8 @@ default: build-exeuntu
 
 build-exeuntu: ## Build the exeuntu Docker image locally
 	@echo "Building exeuntu Docker image..."
-	docker build -t ghcr.io/containmentzone/exeuntu:latest .
+	NPM_TOKEN="$${NPM_TOKEN:-$$(gh auth token)}" \
+		docker build --secret id=npm_token,env=NPM_TOKEN -t ghcr.io/containmentzone/exeuntu:latest .
 	@echo "✓ Image built locally as ghcr.io/containmentzone/exeuntu:latest"
 
 build: build-exeuntu
