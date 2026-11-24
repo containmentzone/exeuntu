@@ -22,9 +22,9 @@ like a small VM under [cyac](https://github.com/containmentzone/cyacrt):
   [pi-web-cyac](https://github.com/containmentzone/pi-web-cyac) installed
   for `ubuntu`: run `pi` and type `/web`, or start it with
   `PI_WEB_AUTOSTART=1 pi`. It listens on 127.0.0.1:8787 and has no login
-  of its own, so reach it with `cyac expose <box> 8787` (which asks for a
-  token) or bind it to a Tailscale address with `PI_WEB_HOST`, rather than
-  to every interface.
+  of its own. To reach it from outside, set `PI_WEB_HOST` to the box's
+  address and `cyac expose <box> 8787` (the proxy asks for a token), or to
+  a Tailscale address, rather than to every interface.
 
 pi-web-cyac comes from GitHub Packages, which needs a token with
 `read:packages` even to install. The build takes it as the BuildKit secret
