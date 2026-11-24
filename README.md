@@ -21,7 +21,10 @@ like a small VM under [cyac](https://github.com/containmentzone/cyacrt):
 - The [pi](https://github.com/earendil-works/pi) coding agent, with
   [pi-web-cyac](https://github.com/containmentzone/pi-web-cyac) installed
   for `ubuntu`: run `pi` and type `/web`, or start it with
-  `PI_WEB_AUTOSTART=1 PI_WEB_HOST=0.0.0.0 pi`.
+  `PI_WEB_AUTOSTART=1 pi`. It listens on 127.0.0.1:8787 and has no login
+  of its own, so reach it with `cyac expose <box> 8787` (which asks for a
+  token) or bind it to a Tailscale address with `PI_WEB_HOST`, rather than
+  to every interface.
 
 pi-web-cyac comes from GitHub Packages, which needs a token with
 `read:packages` even to install. The build takes it as the BuildKit secret
