@@ -25,3 +25,8 @@ jobs:
           context: .
           push: true
           tags: ghcr.io/${{ github.repository }}:${{ github.sha }}
+          # Reads @containmentzone/pi-web-cyac from GitHub Packages. The
+          # job's own token works once the package grants this repository
+          # read access; a PACKAGES_TOKEN secret (read:packages) overrides it.
+          secrets: |
+            npm_token=${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
