@@ -13,8 +13,8 @@ like a small VM under [cyac](https://github.com/containmentzone/cyacrt):
 - The login user is `ubuntu` (uid 1000, passwordless sudo, lingering),
   advertised with the `cyac.nullvoid.space/login-user` label.
 - `/etc/fstab` grows the root filesystem on `/dev/vda` at boot.
-- `/home`, `/root`, `/var/log` and `/var/lib/tailscale` are declared
-  `VOLUME`s, so they persist when a box moves to a newer image while the
+- `/home`, `/root`, `/var/log`, `/var/lib/tailscale`, `/var/lib/docker`
+  and `/var/lib/containerd` are declared `VOLUME`s, so they persist when a box moves to a newer image while the
   rest of the root is replaced (once cyac reads image volumes; today it
   ignores them).
 - The host provides `/etc/resolv.conf`, `/etc/hosts` and `/etc/hostname`;

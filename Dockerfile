@@ -169,9 +169,10 @@ LABEL "cyac.nullvoid.space/login-user"="ubuntu"
 LABEL "cyac.nullvoid.space/expose.pi"="8787"
 # What outlives the image: once cyac reads image volumes, a box that moves
 # to a newer image gets a rebuilt root but keeps these, filled from the
-# image only the first time. Homes, logs (the journal too) and tailscale's
-# node key. Not all of /var/lib: dpkg's database there describes /usr, which
-# comes from the new image.
+# image only the first time. Homes, logs (the journal too), tailscale's
+# node key, and Docker's images and containers (containerd's too, for
+# Docker's containerd image store). Not all of /var/lib: dpkg's database
+# there describes /usr, which comes from the new image.
 # Last, so no later build step writes into them.
-VOLUME ["/home", "/root", "/var/log", "/var/lib/tailscale"]
+VOLUME ["/home", "/root", "/var/log", "/var/lib/tailscale", "/var/lib/docker", "/var/lib/containerd"]
 CMD ["/usr/local/bin/init"]
