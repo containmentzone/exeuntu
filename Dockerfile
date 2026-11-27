@@ -69,36 +69,11 @@ RUN case "$(dpkg --print-architecture)" in \
 	rm -rf "${tmp}" && \
 	zellij --version
 
-# Lix (lix.systems) as a multi-user install from its release tarball, checked
-# against the .sha256 next to it. No systemd runs during the build, so the
-# installer skips the daemon units; link them here like it would. Socket
-# activated, so nix-daemon starts on first use. The installer puts nix on
-# PATH for interactive and login shells (/etc/bash.bashrc,
-# /etc/profile.d/nix.sh); environment.d does it for user services, so pi's
-# bash -c commands find it too (99-nix sorts after Ubuntu's 99-environment,
-# which sets PATH outright).
+# Lix (lix.systems), multi-user, from its release tarball checked against
+# the .sha256 next to it. See install-lix.sh.
 ARG LIX_VERSION=2.96.0
-RUN case "$(dpkg --print-architecture)" in \
-		amd64) arch=x86_64 ;; arm64) arch=aarch64 ;; \
-		*) echo "no Lix build for $(dpkg --print-architecture)"; exit 1 ;; \
-	esac && \
-	name="lix-${LIX_VERSION}-${arch}-linux" && \
-	url="https://releases.lix.systems/lix/lix-${LIX_VERSION}/${name}.tar.xz" && \
-	cd /tmp && \
-	curl -fsSLO --retry 5 "${url}" && \
-	echo "$(curl -fsSL --retry 5 "${url}.sha256" | cut -d' ' -f1)  ${name}.tar.xz" | sha256sum -c - && \
-	tar -xJf "${name}.tar.xz" && \
-	printf '%s\n' 'experimental-features = nix-command flakes' > nix-extra.conf && \
-	"./${name}/install" --daemon --yes --no-channel-add --nix-extra-conf-file /tmp/nix-extra.conf && \
-	rm -rf "${name}" "${name}.tar.xz" nix-extra.conf && \
-	units=/nix/var/nix/profiles/default/lib/systemd/system && \
-	ln -sfn /nix/var/nix/profiles/default/lib/tmpfiles.d/nix-daemon.conf /etc/tmpfiles.d/nix-daemon.conf && \
-	systemctl link "${units}/nix-daemon.service" && \
-	systemctl enable "${units}/nix-daemon.socket" && \
-	mkdir -p /etc/environment.d && \
-	echo 'PATH=$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$PATH' \
-		> /etc/environment.d/99-nix.conf && \
-	/nix/var/nix/profiles/default/bin/nix --version
+RUN --mount=type=bind,source=install-lix.sh,target=/tmp/install-lix.sh \
+	bash /tmp/install-lix.sh "${LIX_VERSION}"
 
 # The pi coding agent, system-wide. pi's own self-update needs sudo here,
 # which the login user has.
