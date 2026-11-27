@@ -167,9 +167,11 @@ RUN : > /etc/machine-id && \
 LABEL "cyac.nullvoid.space/login-user"="ubuntu"
 # `cyac expose <box>` serves pi.service's web UI at pi.<box>.<root domain>.
 LABEL "cyac.nullvoid.space/expose.pi"="8787"
-# Homes outlive the image: once cyac reads image volumes, a box that moves
+# What outlives the image: once cyac reads image volumes, a box that moves
 # to a newer image gets a rebuilt root but keeps these, filled from the
-# image only the first time.
+# image only the first time. Homes, logs (the journal too) and tailscale's
+# node key. Not all of /var/lib: dpkg's database there describes /usr, which
+# comes from the new image.
 # Last, so no later build step writes into them.
-VOLUME ["/home", "/root"]
+VOLUME ["/home", "/root", "/var/log", "/var/lib/tailscale"]
 CMD ["/usr/local/bin/init"]
