@@ -26,7 +26,8 @@ like a small VM under [cyac](https://github.com/containmentzone/cyacrt):
   `nix-daemon.socket` starts the daemon on first use, so `ubuntu` uses
   nix without sudo. `/nix` is a volume, so profiles and the store
   survive a move to a newer image; Lix itself then comes from the image
-  only on first seed, and `sudo -i nix upgrade-nix` upgrades it.
+  only on first seed; upgrade it with the upgrade script on
+  [lix.systems/install](https://lix.systems/install/).
 - The [pi](https://github.com/earendil-works/pi) coding agent, with
   [pi-web-cyac](https://github.com/containmentzone/pi-web-cyac) installed
   for `ubuntu`. The user unit `pi.service` starts it at boot as `ubuntu`,
