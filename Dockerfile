@@ -167,4 +167,8 @@ RUN : > /etc/machine-id && \
 LABEL "cyac.nullvoid.space/login-user"="ubuntu"
 # `cyac expose <box>` serves pi.service's web UI at pi.<box>.<root domain>.
 LABEL "cyac.nullvoid.space/expose.pi"="8787"
+# Homes outlive the image: when a box moves to a newer image, cyac rebuilds
+# its root but keeps these, filling them from the image only the first time.
+# Last, so no later build step writes into them.
+VOLUME ["/home", "/root"]
 CMD ["/usr/local/bin/init"]
