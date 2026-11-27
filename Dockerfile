@@ -54,6 +54,46 @@ RUN case "$(dpkg --print-architecture)" in \
 	rm "${tarball}" && \
 	node --version && npm --version
 
+# zellij from its GitHub release. The release's .sha256sum is of the binary
+# inside the tarball, not of the tarball itself.
+ARG ZELLIJ_VERSION=0.45.1
+RUN case "$(dpkg --print-architecture)" in \
+		amd64) arch=x86_64 ;; arm64) arch=aarch64 ;; \
+		*) echo "no zellij build for $(dpkg --print-architecture)"; exit 1 ;; \
+	esac && \
+	url="https://github.com/zellij-org/zellij/releases/download/v${ZELLIJ_VERSION}/zellij-${arch}-unknown-linux-musl" && \
+	tmp="$(mktemp -d)" && \
+	curl -fsSL --retry 5 "${url}.tar.gz" | tar -xzf - -C "${tmp}" && \
+	echo "$(curl -fsSL --retry 5 "${url}.sha256sum" | cut -d' ' -f1)  ${tmp}/zellij" | sha256sum -c - && \
+	install -m 0755 "${tmp}/zellij" /usr/local/bin/zellij && \
+	rm -rf "${tmp}" && \
+	zellij --version
+
+# Lix (lix.systems) as a multi-user install from its release tarball, checked
+# against the .sha256 next to it. No systemd runs during the build, so the
+# installer skips the daemon units; link them here like it would. Socket
+# activated, so nix-daemon starts on first use. /etc/bash.bashrc and
+# /etc/profile.d/nix.sh put nix on everyone's PATH.
+ARG LIX_VERSION=2.96.0
+RUN case "$(dpkg --print-architecture)" in \
+		amd64) arch=x86_64 ;; arm64) arch=aarch64 ;; \
+		*) echo "no Lix build for $(dpkg --print-architecture)"; exit 1 ;; \
+	esac && \
+	name="lix-${LIX_VERSION}-${arch}-linux" && \
+	url="https://releases.lix.systems/lix/lix-${LIX_VERSION}/${name}.tar.xz" && \
+	cd /tmp && \
+	curl -fsSLO --retry 5 "${url}" && \
+	echo "$(curl -fsSL --retry 5 "${url}.sha256" | cut -d' ' -f1)  ${name}.tar.xz" | sha256sum -c - && \
+	tar -xJf "${name}.tar.xz" && \
+	printf '%s\n' 'experimental-features = nix-command flakes' > nix-extra.conf && \
+	"./${name}/install" --daemon --yes --no-channel-add --nix-extra-conf-file /tmp/nix-extra.conf && \
+	rm -rf "${name}" "${name}.tar.xz" nix-extra.conf && \
+	units=/nix/var/nix/profiles/default/lib/systemd/system && \
+	ln -sfn /nix/var/nix/profiles/default/lib/tmpfiles.d/nix-daemon.conf /etc/tmpfiles.d/nix-daemon.conf && \
+	systemctl link "${units}/nix-daemon.service" && \
+	systemctl enable "${units}/nix-daemon.socket" && \
+	/nix/var/nix/profiles/default/bin/nix --version
+
 # The pi coding agent, system-wide. pi's own self-update needs sudo here,
 # which the login user has.
 ARG PI_VERSION=1.5.2

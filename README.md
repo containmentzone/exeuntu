@@ -20,8 +20,12 @@ like a small VM under [cyac](https://github.com/containmentzone/cyacrt):
 - The host provides `/etc/resolv.conf`, `/etc/hosts` and `/etc/hostname`;
   systemd-resolved is not installed.
 - Tools: build-essential, Go, Python with pipx and uv, Node.js, git, gh,
-  Docker (started on first use through docker.socket), and the usual CLI
-  basics.
+  zellij, Docker (started on first use through docker.socket), and the
+  usual CLI basics.
+- [Lix](https://lix.systems) as a multi-user install with flakes on;
+  `nix-daemon.socket` starts the daemon on first use, so `ubuntu` uses
+  nix without sudo. `/nix` is on the root disk, not a volume, so what
+  you install into a profile is gone when a box moves to a newer image.
 - The [pi](https://github.com/earendil-works/pi) coding agent, with
   [pi-web-cyac](https://github.com/containmentzone/pi-web-cyac) installed
   for `ubuntu`. The user unit `pi.service` starts it at boot as `ubuntu`,
@@ -45,7 +49,8 @@ NPM_TOKEN=ghp_... make
 CI uses the job's `GITHUB_TOKEN`, which can read the package once the
 package's settings (Manage Actions access) give this repository read
 access, or a `PACKAGES_TOKEN` repository secret if one is set.
-`NODE_VERSION`, `PI_VERSION` and `PI_WEB_VERSION` are build args;
+`NODE_VERSION`, `ZELLIJ_VERSION`, `LIX_VERSION`, `PI_VERSION` and
+`PI_WEB_VERSION` are build args;
 `PI_WEB_VERSION` defaults to the latest release.
 
 Build it with `make`. Running systemd under plain Docker works with the
