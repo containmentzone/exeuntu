@@ -13,8 +13,8 @@ like a small VM under [cyac](https://github.com/containmentzone/cyacrt):
 - The login user is `ubuntu` (uid 1000, passwordless sudo, lingering),
   advertised with the `cyac.nullvoid.space/login-user` label.
 - `/etc/fstab` grows the root filesystem on `/dev/vda` at boot.
-- `/home`, `/root`, `/var/log`, `/var/lib/tailscale`, `/var/lib/docker`
-  and `/var/lib/containerd` are declared `VOLUME`s, so they persist when a box moves to a newer image while the
+- `/home`, `/root`, `/var/log`, `/var/lib/tailscale`, `/var/lib/docker`,
+  `/var/lib/containerd` and `/nix` are declared `VOLUME`s, so they persist when a box moves to a newer image while the
   rest of the root is replaced (once cyac reads image volumes; today it
   ignores them).
 - The host provides `/etc/resolv.conf`, `/etc/hosts` and `/etc/hostname`;
@@ -24,8 +24,9 @@ like a small VM under [cyac](https://github.com/containmentzone/cyacrt):
   usual CLI basics.
 - [Lix](https://lix.systems) as a multi-user install with flakes on;
   `nix-daemon.socket` starts the daemon on first use, so `ubuntu` uses
-  nix without sudo. `/nix` is on the root disk, not a volume, so what
-  you install into a profile is gone when a box moves to a newer image.
+  nix without sudo. `/nix` is a volume, so profiles and the store
+  survive a move to a newer image; Lix itself then comes from the image
+  only on first seed, and `sudo -i nix upgrade-nix` upgrades it.
 - The [pi](https://github.com/earendil-works/pi) coding agent, with
   [pi-web-cyac](https://github.com/containmentzone/pi-web-cyac) installed
   for `ubuntu`. The user unit `pi.service` starts it at boot as `ubuntu`,

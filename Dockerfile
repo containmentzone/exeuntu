@@ -211,8 +211,10 @@ LABEL "cyac.nullvoid.space/expose.pi"="8787"
 # to a newer image gets a rebuilt root but keeps these, filled from the
 # image only the first time. Homes, logs (the journal too), tailscale's
 # node key, and Docker's images and containers (containerd's too, for
-# Docker's containerd image store). Not all of /var/lib: dpkg's database
-# there describes /usr, which comes from the new image.
+# Docker's containerd image store), and /nix, so nix profiles and the store
+# survive (Lix itself then comes from the image only on first seed; upgrade
+# it with nix upgrade-nix). Not all of /var/lib: dpkg's database there
+# describes /usr, which comes from the new image.
 # Last, so no later build step writes into them.
-VOLUME ["/home", "/root", "/var/log", "/var/lib/tailscale", "/var/lib/docker", "/var/lib/containerd"]
+VOLUME ["/home", "/root", "/var/log", "/var/lib/tailscale", "/var/lib/docker", "/var/lib/containerd", "/nix"]
 CMD ["/usr/local/bin/init"]
