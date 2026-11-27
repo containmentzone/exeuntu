@@ -14,7 +14,8 @@ like a small VM under [cyac](https://github.com/containmentzone/cyacrt):
   advertised with the `cyac.nullvoid.space/login-user` label.
 - `/etc/fstab` grows the root filesystem on `/dev/vda` at boot.
 - `/home` and `/root` are declared `VOLUME`s, so they persist when a box
-  moves to a newer image while the rest of the root is replaced.
+  moves to a newer image while the rest of the root is replaced (once cyac
+  reads image volumes; today it ignores them).
 - The host provides `/etc/resolv.conf`, `/etc/hosts` and `/etc/hostname`;
   systemd-resolved is not installed.
 - Tools: build-essential, Go, Python with pipx and uv, Node.js, git, gh,
