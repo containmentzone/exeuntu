@@ -228,9 +228,11 @@ export default async function (pi: ExtensionAPI) {
 			models,
 		});
 	// ask probes e and registers what it lists; false if it didn't answer.
-	const ask = async (e: Endpoint, quiet = false) => {
+	const ask = async (e: Endpoint, quiet = false, current = () => true) => {
 		try {
-			register(e, await probe(e));
+			const models = await probe(e);
+			if (!current()) return false;
+			register(e, models);
 			return true;
 		} catch (err) {
 			if (!quiet) console.warn(`[pi-endpoints] ${e.name}: ${(err as Error).message}; retrying`);
@@ -263,7 +265,7 @@ export default async function (pi: ExtensionAPI) {
 				const t = setTimeout(async () => {
 					timers.delete(t);
 					if (!pending.has(e) || generation !== mine) return;
-					const answered = await ask(e, true);
+					const answered = await ask(e, true, () => generation === mine);
 					if (generation !== mine) return;
 					if (answered) {
 						pending.delete(e);
