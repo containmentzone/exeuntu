@@ -11,12 +11,13 @@
 // syntax ($VAR, !command) and defaults to a placeholder, since pi hides
 // models it has no key for. models= keeps only the model IDs that match one
 // of its patterns, where * matches anything. Without it, an endpoint whose
-// name or URL matches a PICKS entry (NanoGPT, which lists hundreds of
-// models) keeps that entry's patterns, and any other endpoint keeps all.
-// # starts a comment.
+// name or URL matches a PICKS entry (NanoGPT and OpenRouter, which list
+// hundreds of models) keeps that entry's patterns, and any other endpoint
+// keeps all. Fields can't contain spaces. # starts a comment.
 //
 // Every endpoint is asked once at startup and again whenever /model opens,
 // so models that appear later show up there. Edit the file, then /reload.
+import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -38,6 +39,19 @@ const PICKS: [RegExp, string[]][] = [
 			"moonshotai/kimi-k2*",
 			"z-ai/glm-*",
 			"qwen/qwen3-coder*",
+		],
+	],
+	[
+		/openrouter/i,
+		[
+			"anthropic/claude-opus-*",
+			"anthropic/claude-sonnet-*",
+			"openai/gpt-5*",
+			"google/gemini-*-pro*",
+			"moonshotai/kimi-k2*",
+			"z-ai/glm-*",
+			"qwen/qwen3-coder*",
+			"deepseek/deepseek-v3*",
 		],
 	],
 ];
@@ -94,11 +108,20 @@ function known(id: string) {
 	return catalog.get(id) ?? catalog.get(id.split("/").pop()!);
 }
 
+// secret resolves a key the way pi does, for the /models request:
+// $NAME or ${NAME} from the environment, !command from its output.
+function secret(key: string): string {
+	if (key.startsWith("!")) return execSync(key.slice(1), { encoding: "utf8" }).trim();
+	const env = /^\$\{?(\w+)\}?$/.exec(key);
+	return env ? (process.env[env[1]] ?? "") : key;
+}
+
 type Listed = { id: string; name?: string; context_length?: number; context_window?: number; max_tokens?: number };
 
 async function probe(e: Endpoint, signal?: AbortSignal) {
 	const timeout = AbortSignal.timeout(TIMEOUT_MS);
 	const res = await fetch(`${e.baseUrl}/models`, {
+		headers: e.apiKey === "none" ? {} : { Authorization: `Bearer ${secret(e.apiKey)}` },
 		signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
 	});
 	if (!res.ok) throw new Error(`${e.baseUrl}/models: HTTP ${res.status}`);

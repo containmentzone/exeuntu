@@ -47,8 +47,9 @@ like a small VM under [cyac](https://github.com/containmentzone/cyacrt):
   host). The key takes pi's syntax (`$VAR`, `!command`) and can be left out
   when a proxy adds the real one. `models=` keeps the model IDs that match
   (`*` matches anything). Without it, an endpoint whose name or URL says
-  NanoGPT keeps a short list of picks from the extension's `PICKS` (it
-  lists hundreds), and any other endpoint keeps all of its models. pi asks each endpoint's `/models` at
+  NanoGPT or OpenRouter keeps a short list of picks from the extension's
+  `PICKS` (they list hundreds), and any other endpoint keeps all of its
+  models. A key can't contain spaces, so give a `!command` as one word. pi asks each endpoint's `/models` at
   startup and whenever `/model` opens; after editing the file, `/reload`.
   Context window, reasoning and image input come from the endpoint if it
   says, else from pi's catalog when the model ID matches one it knows.
