@@ -50,7 +50,8 @@ like a small VM under [cyac](https://github.com/containmentzone/cyacrt):
   `models.json`'s format; the image has `nanogpt` and `openrouter`) gets
   only that provider's models, with its metadata, since those services list
   hundreds. `models=` keeps only the IDs that match (`*` matches anything).
-  The rest comes from pi's catalog when the ID is one it knows. pi asks each
+  The rest comes from what the endpoint reports, else from pi's catalog
+  when the ID is one it knows. pi asks each
   endpoint once at startup; one that doesn't answer yet (DNS or its gateway
   still coming up) is retried in the background, backing off to once a
   minute. `/endpoints` asks them all again; after editing the files,

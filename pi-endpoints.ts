@@ -17,8 +17,8 @@
 // as far as the endpoint lists them. That is for services such as NanoGPT
 // and OpenRouter, which list hundreds. models= keeps only the IDs that match
 // one of its patterns (* matches anything), preset or not. Whatever a preset
-// doesn't say comes from pi's own catalog when the ID matches a model it
-// knows, else from the endpoint, else from defaults.
+// doesn't say comes from what the endpoint reports, else from pi's own
+// catalog when the ID matches a model it knows, else from defaults.
 //
 // A preset's "subscription" names, relative to the base URL, a list of the
 // models a subscription covers ("models", tagged [sub] in /model) and the
@@ -175,14 +175,24 @@ async function probe(e: Endpoint) {
 		.map((d) => {
 			const m = listed.get(d.id)!;
 			const k = known(d.id, e.catalog);
+			// What the endpoint reports, leaving out what it doesn't.
+			const reported = Object.fromEntries(
+				Object.entries({
+					reasoning: m.capabilities?.reasoning,
+					input: m.capabilities?.vision === undefined ? undefined : m.capabilities.vision ? ["text", "image"] : ["text"],
+					contextWindow: m.context_length ?? m.context_window,
+					maxTokens: m.max_output_tokens ?? m.max_tokens,
+				}).filter(([, v]) => v !== undefined),
+			);
 			const def = {
 				name: m.name ?? d.id,
-				reasoning: m.capabilities?.reasoning ?? false,
-				input: m.capabilities?.vision ? ["text" as const, "image" as const] : ["text" as const],
+				reasoning: false,
+				input: ["text" as const],
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-				contextWindow: m.context_length ?? m.context_window ?? 128000,
-				maxTokens: m.max_output_tokens ?? m.max_tokens ?? 16384,
+				contextWindow: 128000,
+				maxTokens: 16384,
 				...k,
+				...reported,
 				...d,
 				compat: { ...k.compat, ...e.preset?.compat, ...d.compat },
 			};
@@ -241,14 +251,21 @@ export default async function (pi: ExtensionAPI) {
 	// Retry what didn't answer, from the session (not the factory, which
 	// also runs for --list-models), backing off from 2s to once a minute.
 	const timers = new Set<NodeJS.Timeout>();
+	// generation changes at every shutdown, so a retry that was waiting on
+	// an answer then stops instead of rescheduling; the next session_start
+	// picks up what is still pending.
+	let generation = 0;
 	pi.on("session_start", async (_event, ctx) => {
+		const mine = generation;
 		for (const e of pending) {
 			let wait = 2000;
 			const retry = () => {
 				const t = setTimeout(async () => {
 					timers.delete(t);
-					if (!pending.has(e)) return;
-					if (await ask(e, true)) {
+					if (!pending.has(e) || generation !== mine) return;
+					const answered = await ask(e, true);
+					if (generation !== mine) return;
+					if (answered) {
 						pending.delete(e);
 						try {
 							if (ctx.hasUI) ctx.ui.notify(`${e.name} answered; its models are in /model`, "info");
@@ -267,6 +284,7 @@ export default async function (pi: ExtensionAPI) {
 		}
 	});
 	pi.on("session_shutdown", async () => {
+		generation++;
 		for (const t of timers) clearTimeout(t);
 		timers.clear();
 	});
