@@ -32,6 +32,35 @@ like a small VM under [cyac](https://github.com/containmentzone/cyacrt):
   token, but other boxes on the same network reach it directly. Put
   overrides such as `PI_WEB_HOST=127.0.0.1` in `~/.config/pi-web.env`, and
   `systemctl --user stop pi` stops it.
+- A pi extension, `~/.pi/agent/extensions/pi-endpoints.ts`, adds the
+  models of OpenAI-compatible endpoints listed in `~/.pi/agent/endpoints`,
+  usually cyac services such as a `cyac-inject` proxy. One per line,
+  `[name] <base URL> [key=<api key>] [models=<pattern>,...]`, where
+  `<base URL>/models` lists the models:
+
+  ```
+  nanogpt http://nanogpt.cyac.internal
+  local http://llm.cyac.internal:8080/v1 models=qwen*,llama*
+  ```
+
+  The name is the provider in `/model` (default: the first label of the
+  host). The key takes pi's syntax (`$VAR`, `!command`, no spaces) and can
+  be left out when a proxy adds the real one. An endpoint whose name or URL
+  contains a provider ID from `~/.pi/agent/endpoint-presets.json` (in
+  `models.json`'s format; the image has `nanogpt` and `openrouter`) gets
+  only that provider's models, with its metadata, since those services list
+  hundreds. `models=` keeps only the IDs that match (`*` matches anything).
+  The rest comes from what the endpoint reports, else from pi's catalog
+  when the ID is one it knows. pi asks each
+  endpoint once at startup; one that doesn't answer yet (DNS or its gateway
+  still coming up) is retried in the background, backing off to once a
+  minute. `/endpoints` asks them all again; after editing the files,
+  `/reload`. The NanoGPT preset tags the models its subscription covers with
+  `[sub]` and `/usage` shows the subscription's daily and weekly use. The
+  tags need the proxy's upstream at `https://nano-gpt.com/api` and the base
+  URL ending in `/v1`, since the subscription's model list is outside
+  `/api/v1`. Both files and the extension sit in the home volume, so a newer
+  image doesn't update a box that already has them.
 
 pi-web-cyac comes from GitHub Packages, which needs a token with
 `read:packages` even to install. The build takes it as the BuildKit secret
