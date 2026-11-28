@@ -49,8 +49,12 @@ like a small VM under [cyac](https://github.com/containmentzone/cyacrt):
   local http://llm.cyac.internal:8080/v1 models=qwen*,llama*
   ```
 
-  The name is the provider in `/model` (default: the first label of the
-  host). The key takes pi's syntax (`$VAR`, `!command`, no spaces) and can
+  The image's list has `http://nanogpt.cyac.internal` and
+  `http://openrouter.cyac.internal` (named `openrouter-cyac`), so a box on a network with those
+  services finds their models without setup. The name is the provider in
+  `/model` (default: the first label of the host). It can't be one of pi's
+  own providers such as `openrouter`, since pi would send that provider's
+  stored key to the endpoint. The key takes pi's syntax (`$VAR`, `!command`, no spaces) and can
   be left out when a proxy adds the real one. An endpoint whose name or URL
   contains a provider ID from `~/.pi/agent/endpoint-presets.json` (in
   `models.json`'s format; the image has `nanogpt` and `openrouter`) gets

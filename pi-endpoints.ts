@@ -80,6 +80,12 @@ export function parse(text: string, presets: Record<string, Preset> = {}): Endpo
 			continue;
 		}
 		const name = at === 1 ? fields[0] : host.split(".")[0];
+		// pi would send a built-in provider's stored key (auth.json) to this
+		// URL instead of ours, and the line would replace that provider.
+		if ((getBuiltinProviders() as string[]).includes(name)) {
+			skip(`${name} is one of pi's own providers; give the endpoint a name of its own`);
+			continue;
+		}
 		if (out.some((e) => e.name === name)) {
 			skip(`a second endpoint named ${name}; give it a name of its own`);
 			continue;
@@ -165,7 +171,7 @@ async function probe(e: Endpoint) {
 	const sub = e.preset?.subscription?.models;
 	const covered = sub
 		? await ids(e, sub).catch((err) => {
-				console.warn(`[pi-endpoints] ${e.name}: no subscription tags: ${err.message}`);
+				console.warn(`[pi-endpoints] ${e.name}: no subscription tags: ${why(err)}`);
 				return new Map();
 			})
 		: new Map();
@@ -208,9 +214,15 @@ function usage(label: string, c?: { used?: number; remaining?: number; percentUs
 	return `${label} ${pct}% (${c.used.toLocaleString()} used, ${(c.remaining ?? 0).toLocaleString()} left${reset})`;
 }
 
+// why says why a request failed: fetch only says "fetch failed" and keeps
+// the reason (ENOTFOUND, ECONNREFUSED, ...) in its cause.
+function why(err: unknown): string {
+	const e = err as Error & { cause?: { code?: string; message?: string } };
+	return e.cause?.code ?? e.cause?.message ?? e.message;
+}
+
 export default async function (pi: ExtensionAPI) {
-	const text = read(LIST);
-	if (text === undefined) return; // no list, no endpoints
+	const text = read(LIST) ?? "";
 	let presets: Record<string, Preset> = {};
 	try {
 		presets = JSON.parse(read(PRESETS) ?? "{}").providers ?? {};
@@ -235,7 +247,7 @@ export default async function (pi: ExtensionAPI) {
 			register(e, models);
 			return true;
 		} catch (err) {
-			if (!quiet) console.warn(`[pi-endpoints] ${e.name}: ${(err as Error).message}; retrying`);
+			if (!quiet) console.warn(`[pi-endpoints] ${e.name}: ${why(err)}; retrying`);
 			return false;
 		}
 	};
@@ -302,11 +314,11 @@ export default async function (pi: ExtensionAPI) {
 						pending.delete(e);
 						return `${e.name}: ${models.length} models`;
 					} catch (err) {
-						return `${e.name}: ${(err as Error).message}`;
+						return `${e.name}: ${why(err)}`;
 					}
 				}),
 			);
-			ctx.ui.notify(lines.join("\n") || "no endpoints", "info");
+			ctx.ui.notify(lines.join("\n") || `no endpoints in ${LIST}`, "info");
 		},
 	});
 
@@ -325,7 +337,7 @@ export default async function (pi: ExtensionAPI) {
 							...(u.routing?.recommendedMode ? [`  routing: ${u.routing.recommendedMode}`] : []),
 						].join("\n");
 					} catch (err) {
-						return `${e.name}: ${(err as Error).message}`;
+						return `${e.name}: ${why(err)}`;
 					}
 				}),
 			);
