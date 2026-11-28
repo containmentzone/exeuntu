@@ -13,15 +13,21 @@ like a small VM under [cyac](https://github.com/containmentzone/cyacrt):
 - The login user is `ubuntu` (uid 1000, passwordless sudo, lingering),
   advertised with the `cyac.nullvoid.space/login-user` label.
 - `/etc/fstab` grows the root filesystem on `/dev/vda` at boot.
-- `/home`, `/root`, `/var/log`, `/var/lib/tailscale`, `/var/lib/docker`
-  and `/var/lib/containerd` are declared `VOLUME`s, so they persist when a box moves to a newer image while the
+- `/home`, `/root`, `/var/log`, `/var/lib/tailscale`, `/var/lib/docker`,
+  `/var/lib/containerd` and `/nix` are declared `VOLUME`s, so they persist when a box moves to a newer image while the
   rest of the root is replaced (once cyac reads image volumes; today it
   ignores them).
 - The host provides `/etc/resolv.conf`, `/etc/hosts` and `/etc/hostname`;
   systemd-resolved is not installed.
 - Tools: build-essential, Go, Python with pipx and uv, Node.js, git, gh,
-  Docker (started on first use through docker.socket), and the usual CLI
-  basics.
+  zellij, Docker (started on first use through docker.socket), and the
+  usual CLI basics.
+- [Lix](https://lix.systems) as a multi-user install with flakes on;
+  `nix-daemon.socket` starts the daemon on first use, so `ubuntu` uses
+  nix without sudo. `/nix` is a volume, so profiles and the store
+  survive a move to a newer image; Lix itself then comes from the image
+  only on first seed; upgrade it with the upgrade script on
+  [lix.systems/install](https://lix.systems/install/).
 - The [pi](https://github.com/earendil-works/pi) coding agent, with
   [pi-web-cyac](https://github.com/containmentzone/pi-web-cyac) installed
   for `ubuntu`. The user unit `pi.service` starts it at boot as `ubuntu`,
@@ -74,7 +80,8 @@ NPM_TOKEN=ghp_... make
 CI uses the job's `GITHUB_TOKEN`, which can read the package once the
 package's settings (Manage Actions access) give this repository read
 access, or a `PACKAGES_TOKEN` repository secret if one is set.
-`NODE_VERSION`, `PI_VERSION` and `PI_WEB_VERSION` are build args;
+`NODE_VERSION`, `ZELLIJ_VERSION`, `LIX_VERSION`, `PI_VERSION` and
+`PI_WEB_VERSION` are build args;
 `PI_WEB_VERSION` defaults to the latest release.
 
 Build it with `make`. Running systemd under plain Docker works with the

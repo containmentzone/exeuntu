@@ -54,6 +54,27 @@ RUN case "$(dpkg --print-architecture)" in \
 	rm "${tarball}" && \
 	node --version && npm --version
 
+# zellij from its GitHub release. The release's .sha256sum is of the binary
+# inside the tarball, not of the tarball itself.
+ARG ZELLIJ_VERSION=0.45.1
+RUN case "$(dpkg --print-architecture)" in \
+		amd64) arch=x86_64 ;; arm64) arch=aarch64 ;; \
+		*) echo "no zellij build for $(dpkg --print-architecture)"; exit 1 ;; \
+	esac && \
+	url="https://github.com/zellij-org/zellij/releases/download/v${ZELLIJ_VERSION}/zellij-${arch}-unknown-linux-musl" && \
+	tmp="$(mktemp -d)" && \
+	curl -fsSL --retry 5 "${url}.tar.gz" | tar -xzf - -C "${tmp}" && \
+	echo "$(curl -fsSL --retry 5 "${url}.sha256sum" | cut -d' ' -f1)  ${tmp}/zellij" | sha256sum -c - && \
+	install -m 0755 "${tmp}/zellij" /usr/local/bin/zellij && \
+	rm -rf "${tmp}" && \
+	zellij --version
+
+# Lix (lix.systems), multi-user, from its release tarball checked against
+# the .sha256 next to it. See install-lix.sh.
+ARG LIX_VERSION=2.96.0
+RUN --mount=type=bind,source=install-lix.sh,target=/tmp/install-lix.sh \
+	bash /tmp/install-lix.sh "${LIX_VERSION}"
+
 # The pi coding agent, system-wide. pi's own self-update needs sudo here,
 # which the login user has.
 ARG PI_VERSION=1.5.2
@@ -177,8 +198,10 @@ LABEL "cyac.nullvoid.space/expose.pi"="8787"
 # to a newer image gets a rebuilt root but keeps these, filled from the
 # image only the first time. Homes, logs (the journal too), tailscale's
 # node key, and Docker's images and containers (containerd's too, for
-# Docker's containerd image store). Not all of /var/lib: dpkg's database
-# there describes /usr, which comes from the new image.
+# Docker's containerd image store), and /nix, so nix profiles and the store
+# survive (Lix itself then comes from the image only on first seed; upgrade
+# it with the script on lix.systems/install). Not all of /var/lib: dpkg's database there
+# describes /usr, which comes from the new image.
 # Last, so no later build step writes into them.
-VOLUME ["/home", "/root", "/var/log", "/var/lib/tailscale", "/var/lib/docker", "/var/lib/containerd"]
+VOLUME ["/home", "/root", "/var/log", "/var/lib/tailscale", "/var/lib/docker", "/var/lib/containerd", "/nix"]
 CMD ["/usr/local/bin/init"]
