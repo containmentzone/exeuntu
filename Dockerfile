@@ -118,11 +118,6 @@ RUN wants=/home/ubuntu/.config/systemd/user/default.target.wants && \
 	ln -s /etc/systemd/user/pi.service "$wants/pi.service" && \
 	chown -R ubuntu:ubuntu /home/ubuntu/.config
 
-# A pi extension that adds the models of the endpoints listed in
-# ~/.config/pi-endpoints (see the file). On the root, not in the home
-# volume, so a newer image brings a newer copy; pi's settings point at it.
-COPY pi-endpoints.ts /usr/local/share/pi/pi-endpoints.ts
-
 # systemd-growfs@-.service grows the root filesystem when the disk grows.
 RUN echo '/dev/vda / ext4 defaults,x-systemd.growfs 0 1' > /etc/fstab
 
@@ -153,9 +148,14 @@ RUN --mount=type=secret,id=npm_token,uid=1000,required=true \
 	sed -n '1s|^|//npm.pkg.github.com/:_authToken=|p' /run/secrets/npm_token >> /tmp/npm/npmrc && \
 	NPM_CONFIG_USERCONFIG=/tmp/npm/npmrc \
 		pi install "npm:@containmentzone/pi-web-cyac${PI_WEB_VERSION:+@${PI_WEB_VERSION}}" && \
-	pi install /usr/local/share/pi/pi-endpoints.ts && \
 	pi list && \
 	rm -rf ~/.npm
+
+# A pi extension that adds the models of the endpoints listed in
+# ~/.pi/agent/endpoints (see the file), with presets that pick a few models
+# from services that list hundreds.
+COPY --chown=ubuntu:ubuntu pi-endpoints.ts /home/ubuntu/.pi/agent/extensions/pi-endpoints.ts
+COPY --chown=ubuntu:ubuntu endpoint-presets.json /home/ubuntu/.pi/agent/endpoint-presets.json
 USER root
 
 RUN rm -rf /etc/update-motd.d/* /etc/motd

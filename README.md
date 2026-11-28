@@ -32,27 +32,28 @@ like a small VM under [cyac](https://github.com/containmentzone/cyacrt):
   token, but other boxes on the same network reach it directly. Put
   overrides such as `PI_WEB_HOST=127.0.0.1` in `~/.config/pi-web.env`, and
   `systemctl --user stop pi` stops it.
-- A pi extension, `/usr/local/share/pi/pi-endpoints.ts`, adds the models
-  of OpenAI-compatible endpoints listed in `~/.config/pi-endpoints`,
+- A pi extension, `~/.pi/agent/extensions/pi-endpoints.ts`, adds the
+  models of OpenAI-compatible endpoints listed in `~/.pi/agent/endpoints`,
   usually cyac services such as a `cyac-inject` proxy. One per line,
-  `[name] <base URL> [key=<api key>] [models=<pattern>,...]`, with the URL
-  up to and including `/v1`:
+  `[name] <base URL> [key=<api key>] [models=<pattern>,...]`, where
+  `<base URL>/models` lists the models:
 
   ```
-  nanogpt http://nanogpt.cyac.internal:8080/v1
+  nanogpt http://nanogpt.cyac.internal
   local http://llm.cyac.internal:8080/v1 models=qwen*,llama*
   ```
 
   The name is the provider in `/model` (default: the first label of the
-  host). The key takes pi's syntax (`$VAR`, `!command`) and can be left out
-  when a proxy adds the real one. `models=` keeps the model IDs that match
-  (`*` matches anything). Without it, an endpoint whose name or URL says
-  NanoGPT or OpenRouter keeps a short list of picks from the extension's
-  `PICKS` (they list hundreds), and any other endpoint keeps all of its
-  models. A key can't contain spaces, so give a `!command` as one word. pi asks each endpoint's `/models` at
-  startup and whenever `/model` opens; after editing the file, `/reload`.
-  Context window, reasoning and image input come from the endpoint if it
-  says, else from pi's catalog when the model ID matches one it knows.
+  host). The key takes pi's syntax (`$VAR`, `!command`, no spaces) and can
+  be left out when a proxy adds the real one. An endpoint whose name or URL
+  contains a provider ID from `~/.pi/agent/endpoint-presets.json` (in
+  `models.json`'s format; the image has `nanogpt` and `openrouter`) gets
+  only that provider's models, with its metadata, since those services list
+  hundreds. `models=` keeps only the IDs that match (`*` matches anything).
+  The rest comes from pi's catalog when the ID is one it knows. pi asks each
+  endpoint at startup and whenever `/model` opens; after editing the files,
+  `/reload`. Both files and the extension sit in the home volume, so a newer
+  image doesn't update a box that already has them.
 
 pi-web-cyac comes from GitHub Packages, which needs a token with
 `read:packages` even to install. The build takes it as the BuildKit secret
