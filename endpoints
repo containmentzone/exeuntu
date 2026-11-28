@@ -5,6 +5,7 @@
 # These are cyac services by their usual names, each a cyac-inject proxy
 # that adds the real key. One that doesn't exist (or isn't up yet) is asked
 # again in the background, and its models show up in /model once it answers.
-# Edit, then /reload.
+# A name can't be one of pi's own providers (openrouter, openai, ...), whose
+# stored keys would go to these URLs. Edit, then /reload.
 http://nanogpt.cyac.internal
-http://openrouter.cyac.internal
+openrouter-cyac http://openrouter.cyac.internal

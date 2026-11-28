@@ -80,6 +80,12 @@ export function parse(text: string, presets: Record<string, Preset> = {}): Endpo
 			continue;
 		}
 		const name = at === 1 ? fields[0] : host.split(".")[0];
+		// pi would send a built-in provider's stored key (auth.json) to this
+		// URL instead of ours, and the line would replace that provider.
+		if ((getBuiltinProviders() as string[]).includes(name)) {
+			skip(`${name} is one of pi's own providers; give the endpoint a name of its own`);
+			continue;
+		}
 		if (out.some((e) => e.name === name)) {
 			skip(`a second endpoint named ${name}; give it a name of its own`);
 			continue;
