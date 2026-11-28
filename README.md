@@ -51,8 +51,14 @@ like a small VM under [cyac](https://github.com/containmentzone/cyacrt):
   only that provider's models, with its metadata, since those services list
   hundreds. `models=` keeps only the IDs that match (`*` matches anything).
   The rest comes from pi's catalog when the ID is one it knows. pi asks each
-  endpoint at startup and whenever `/model` opens; after editing the files,
-  `/reload`. Both files and the extension sit in the home volume, so a newer
+  endpoint once at startup; one that doesn't answer yet (DNS or its gateway
+  still coming up) is retried in the background, backing off to once a
+  minute. `/endpoints` asks them all again; after editing the files,
+  `/reload`. The NanoGPT preset tags the models its subscription covers with
+  `[sub]` and `/usage` shows the subscription's daily and weekly use. The
+  tags need the proxy's upstream at `https://nano-gpt.com/api` and the base
+  URL ending in `/v1`, since the subscription's model list is outside
+  `/api/v1`. Both files and the extension sit in the home volume, so a newer
   image doesn't update a box that already has them.
 
 pi-web-cyac comes from GitHub Packages, which needs a token with

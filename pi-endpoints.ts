@@ -20,8 +20,14 @@
 // doesn't say comes from pi's own catalog when the ID matches a model it
 // knows, else from the endpoint, else from defaults.
 //
-// Every endpoint is asked once at startup and again whenever /model opens,
-// so models that appear later show up there. Edit the files, then /reload.
+// A preset's "subscription" names, relative to the base URL, a list of the
+// models a subscription covers ("models", tagged [sub] in /model) and the
+// subscription's usage ("usage", shown by /usage), in NanoGPT's shapes.
+//
+// Every endpoint is asked once at startup. One that doesn't answer (DNS or
+// its gateway may not be up yet when a box boots) is asked again in the
+// background, backing off to once a minute, until it does. /endpoints asks
+// them all again now. Edit the files, then /reload.
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -33,7 +39,7 @@ const PRESETS = join(getAgentDir(), "endpoint-presets.json");
 const TIMEOUT_MS = 3000;
 
 type Def = Record<string, any> & { id: string };
-type Preset = { name?: string; compat?: object; models?: Def[] };
+type Preset = { name?: string; compat?: object; models?: Def[]; subscription?: { models?: string; usage?: string } };
 type Endpoint = { name: string; label?: string; baseUrl: string; apiKey: string; keep?: RegExp; preset?: Preset; catalog?: string };
 
 function read(path: string): string | undefined {
@@ -115,23 +121,39 @@ function secret(key: string): string {
 
 type Listed = { id: string; name?: string; context_length?: number; context_window?: number; max_tokens?: number };
 
-async function probe(e: Endpoint, signal?: AbortSignal) {
+async function get(e: Endpoint, path: string, signal?: AbortSignal): Promise<any> {
+	const url = new URL(path, `${e.baseUrl}/`).href;
 	const timeout = AbortSignal.timeout(TIMEOUT_MS);
-	const res = await fetch(`${e.baseUrl}/models`, {
+	const res = await fetch(url, {
 		headers: e.apiKey === "none" ? {} : { Authorization: `Bearer ${secret(e.apiKey)}` },
 		signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
 	});
-	if (!res.ok) throw new Error(`${e.baseUrl}/models: HTTP ${res.status}`);
-	const { data } = (await res.json()) as { data?: Listed[] };
-	if (!Array.isArray(data)) throw new Error(`${e.baseUrl}/models: no data list`);
-	const listed = new Map(data.filter((m) => typeof m?.id === "string").map((m) => [m.id, m]));
+	if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+	return res.json();
+}
+
+async function ids(e: Endpoint, path: string): Promise<Map<string, Listed>> {
+	const { data } = (await get(e, path)) as { data?: Listed[] };
+	if (!Array.isArray(data)) throw new Error(`${path}: no data list`);
+	return new Map(data.filter((m) => typeof m?.id === "string").map((m) => [m.id, m]));
+}
+
+async function probe(e: Endpoint) {
+	const listed = await ids(e, "models");
+	const sub = e.preset?.subscription?.models;
+	const covered = sub
+		? await ids(e, sub).catch((err) => {
+				console.warn(`[pi-endpoints] ${e.name}: no subscription tags: ${err.message}`);
+				return new Map();
+			})
+		: new Map();
 	const wanted = e.preset?.models ?? [...listed.keys()].map((id) => ({ id }));
 	return wanted
 		.filter((d) => listed.has(d.id) && (!e.keep || e.keep.test(d.id)))
 		.map((d) => {
 			const m = listed.get(d.id)!;
 			const k = known(d.id, e.catalog);
-			return {
+			const def = {
 				name: m.name ?? d.id,
 				reasoning: false,
 				input: ["text" as const],
@@ -142,7 +164,16 @@ async function probe(e: Endpoint, signal?: AbortSignal) {
 				...d,
 				compat: { ...k.compat, ...e.preset?.compat, ...d.compat },
 			};
+			return covered.has(d.id) ? { ...def, name: `${def.name} [sub]` } : def;
 		});
+}
+
+// usage formats one counter of NanoGPT's subscription usage.
+function usage(label: string, c?: { used?: number; remaining?: number; percentUsed?: number; resetAt?: number } | null) {
+	if (!c || c.used == null) return `${label} unknown`;
+	const pct = Math.round((c.percentUsed ?? 0) * 100);
+	const reset = c.resetAt ? `, resets ${new Date(c.resetAt).toLocaleString()}` : "";
+	return `${label} ${pct}% (${c.used.toLocaleString()} used, ${(c.remaining ?? 0).toLocaleString()} left${reset})`;
 }
 
 export default async function (pi: ExtensionAPI) {
@@ -154,20 +185,109 @@ export default async function (pi: ExtensionAPI) {
 	} catch (err) {
 		console.warn(`[pi-endpoints] ${PRESETS}: ${(err as Error).message}`);
 	}
+	const endpoints = parse(text, presets);
+
+	const register = (e: Endpoint, models: Awaited<ReturnType<typeof probe>>) =>
+		pi.registerProvider(e.name, {
+			name: e.label ?? e.name,
+			baseUrl: e.baseUrl,
+			apiKey: e.apiKey,
+			api: "openai-completions",
+			models,
+		});
+	// ask probes e and registers what it lists; false if it didn't answer.
+	const ask = async (e: Endpoint, quiet = false) => {
+		try {
+			register(e, await probe(e));
+			return true;
+		} catch (err) {
+			if (!quiet) console.warn(`[pi-endpoints] ${e.name}: ${(err as Error).message}; retrying`);
+			return false;
+		}
+	};
+
+	const pending = new Set<Endpoint>();
 	await Promise.all(
-		parse(text, presets).map(async (e) => {
-			const models = await probe(e).catch((err) => {
-				console.warn(`[pi-endpoints] ${e.name}: ${err.message}`);
-				return [];
-			});
-			pi.registerProvider(e.name, {
-				name: e.label ?? e.name,
-				baseUrl: e.baseUrl,
-				apiKey: e.apiKey,
-				api: "openai-completions",
-				models,
-				refreshModels: ({ signal }) => probe(e, signal),
-			});
+		endpoints.map(async (e) => {
+			if (!(await ask(e))) {
+				register(e, []);
+				pending.add(e);
+			}
 		}),
 	);
+
+	// Retry what didn't answer, from the session (not the factory, which
+	// also runs for --list-models), backing off from 2s to once a minute.
+	const timers = new Set<NodeJS.Timeout>();
+	pi.on("session_start", async (_event, ctx) => {
+		for (const e of pending) {
+			let wait = 2000;
+			const retry = () => {
+				const t = setTimeout(async () => {
+					timers.delete(t);
+					if (!pending.has(e)) return;
+					if (await ask(e, true)) {
+						pending.delete(e);
+						try {
+							if (ctx.hasUI) ctx.ui.notify(`${e.name} answered; its models are in /model`, "info");
+						} catch {
+							// the session this ctx belonged to has been replaced
+						}
+					} else {
+						wait = Math.min(wait * 2, 60_000);
+						retry();
+					}
+				}, wait);
+				t.unref();
+				timers.add(t);
+			};
+			retry();
+		}
+	});
+	pi.on("session_shutdown", async () => {
+		for (const t of timers) clearTimeout(t);
+		timers.clear();
+	});
+
+	pi.registerCommand("endpoints", {
+		description: "Ask every endpoint in ~/.pi/agent/endpoints for its models again",
+		handler: async (_args, ctx) => {
+			const lines = await Promise.all(
+				endpoints.map(async (e) => {
+					try {
+						const models = await probe(e);
+						register(e, models);
+						pending.delete(e);
+						return `${e.name}: ${models.length} models`;
+					} catch (err) {
+						return `${e.name}: ${(err as Error).message}`;
+					}
+				}),
+			);
+			ctx.ui.notify(lines.join("\n") || "no endpoints", "info");
+		},
+	});
+
+	pi.registerCommand("usage", {
+		description: "Show subscription usage of the endpoints that have it",
+		handler: async (_args, ctx) => {
+			const withUsage = endpoints.filter((e) => e.preset?.subscription?.usage);
+			const lines = await Promise.all(
+				withUsage.map(async (e) => {
+					try {
+						const u = await get(e, e.preset!.subscription!.usage!);
+						return [
+							`${e.name}: ${u.state ?? (u.active ? "active" : "inactive")}`,
+							usage("  daily input", u.dailyInputTokens),
+							usage("  weekly input", u.weeklyInputTokens),
+							...(u.routing?.recommendedMode ? [`  routing: ${u.routing.recommendedMode}`] : []),
+						].join("\n");
+					} catch (err) {
+						return `${e.name}: ${(err as Error).message}`;
+					}
+				}),
+			);
+			ctx.ui.notify(lines.join("\n") || "no endpoint has subscription usage", "info");
+		},
+	});
 }

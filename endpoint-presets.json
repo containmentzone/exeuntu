@@ -2,6 +2,7 @@
   "providers": {
     "nanogpt": {
       "name": "NanoGPT",
+      "subscription": {"models": "../subscription/v1/models", "usage": "subscription/usage"},
       "compat": {"supportsReasoningEffort": true, "thinkingFormat": "openai", "maxTokensField": "max_tokens"},
       "models": [
         {"id": "z-ai/glm-5.3-flash", "name": "GLM 5.3 Flash", "reasoning": true, "thinkingLevelMap": {"minimal": "low", "low": "low", "medium": "high", "high": "high", "xhigh": null, "max": "max"}, "input": ["text", "image"], "contextWindow": 1048576, "maxTokens": 131072, "cost": {"input": 0.1, "output": 0.3, "cacheRead": 0.025, "cacheWrite": 0}},
