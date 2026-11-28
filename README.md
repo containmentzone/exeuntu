@@ -32,6 +32,21 @@ like a small VM under [cyac](https://github.com/containmentzone/cyacrt):
   token, but other boxes on the same network reach it directly. Put
   overrides such as `PI_WEB_HOST=127.0.0.1` in `~/.config/pi-web.env`, and
   `systemctl --user stop pi` stops it.
+- A pi extension, `/usr/local/share/pi/pi-endpoints.ts`, adds the models
+  of OpenAI-compatible endpoints listed in `~/.config/pi-endpoints`,
+  usually cyac services such as a `cyac-inject` proxy. One per line,
+  `[name] <base URL> [api key]`, with the URL up to and including `/v1`:
+
+  ```
+  nanogpt http://nanogpt.cyac.internal:8080/v1
+  ```
+
+  The name is the provider in `/model` (default: the first label of the
+  host). The key takes pi's syntax (`$VAR`, `!command`) and can be left out
+  when a proxy adds the real one. pi asks each endpoint's `/models` at
+  startup and whenever `/model` opens; after editing the file, `/reload`.
+  Context window, reasoning and image input come from the endpoint if it
+  says, else from pi's catalog when the model ID matches one it knows.
 
 pi-web-cyac comes from GitHub Packages, which needs a token with
 `read:packages` even to install. The build takes it as the BuildKit secret
