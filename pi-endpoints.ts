@@ -28,7 +28,8 @@
 // its gateway may not be up yet when a box boots) is asked again in the
 // background, backing off to once a minute, until it does. /endpoints asks
 // them all again now. Edit the files, then /reload.
-import { execSync } from "node:child_process";
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -124,12 +125,12 @@ function known(id: string, provider?: string): Partial<Def> {
 	return m ? { reasoning: m.reasoning, input: m.input, contextWindow: m.contextWindow, maxTokens: m.maxTokens } : {};
 }
 
-// secret resolves a key the way pi does, for the /models request:
-// $NAME or ${NAME} from the environment, !command from its output.
-function secret(key: string): string {
-	if (key.startsWith("!")) return execSync(key.slice(1), { encoding: "utf8" }).trim();
-	const env = /^\$\{?(\w+)\}?$/.exec(key);
-	return env ? (process.env[env[1]] ?? "") : key;
+// secret resolves a key the way pi does, for our own requests: !command
+// from its output (within the request timeout), else $NAME and ${NAME}
+// from the environment, with $$ for a literal $.
+async function secret(key: string): Promise<string> {
+	if (key.startsWith("!")) return (await promisify(exec)(key.slice(1), { timeout: TIMEOUT_MS })).stdout.trim();
+	return key.replace(/\$\$|\$\{(\w+)\}|\$(\w+)/g, (m, a, b) => (m === "$$" ? "$" : (process.env[a ?? b] ?? "")));
 }
 
 type Listed = {
@@ -146,7 +147,7 @@ async function get(e: Endpoint, path: string, signal?: AbortSignal): Promise<any
 	const url = new URL(path, `${e.baseUrl}/`).href;
 	const timeout = AbortSignal.timeout(TIMEOUT_MS);
 	const res = await fetch(url, {
-		headers: e.apiKey === "none" ? {} : { Authorization: `Bearer ${secret(e.apiKey)}` },
+		headers: e.apiKey === "none" ? {} : { Authorization: `Bearer ${await secret(e.apiKey)}` },
 		signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
 	});
 	if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
