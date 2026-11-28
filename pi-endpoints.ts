@@ -59,17 +59,30 @@ function glob(patterns: string[]): RegExp {
 
 export function parse(text: string, presets: Record<string, Preset> = {}): Endpoint[] {
 	const out: Endpoint[] = [];
-	for (const raw of text.split("\n")) {
+	for (const [n, raw] of text.split("\n").entries()) {
 		const fields = raw.replace(/#.*/, "").trim().split(/\s+/).filter(Boolean);
 		if (fields.length === 0) continue;
+		// The line may hold a key, so warnings name it by number only.
+		const skip = (why: string) => console.warn(`[pi-endpoints] ${LIST}:${n + 1}: skipped: ${why}`);
 		const at = fields.findIndex((f) => /^https?:\/\//.test(f));
 		const opts = new Map(fields.slice(at + 1).map((f) => [f.slice(0, f.indexOf("=")), f.slice(f.indexOf("=") + 1)]));
 		if (at < 0 || at > 1 || [...opts.keys()].some((k) => k !== "key" && k !== "models")) {
-			console.warn(`[pi-endpoints] ${LIST}: skipping "${raw.trim()}": want [name] <url> [key=...] [models=...]`);
+			skip("want [name] <url> [key=...] [models=...]");
 			continue;
 		}
 		const baseUrl = fields[at].replace(/\/+$/, "");
-		const name = at === 1 ? fields[0] : new URL(baseUrl).hostname.split(".")[0];
+		let host: string;
+		try {
+			host = new URL(baseUrl).hostname;
+		} catch {
+			skip("not a URL");
+			continue;
+		}
+		const name = at === 1 ? fields[0] : host.split(".")[0];
+		if (out.some((e) => e.name === name)) {
+			skip(`a second endpoint named ${name}; give it a name of its own`);
+			continue;
+		}
 		const models = opts.get("models")?.split(",").filter(Boolean);
 		const id = Object.keys(presets).find((p) => `${name} ${baseUrl}`.toLowerCase().includes(p.toLowerCase()));
 		out.push({
@@ -119,7 +132,15 @@ function secret(key: string): string {
 	return env ? (process.env[env[1]] ?? "") : key;
 }
 
-type Listed = { id: string; name?: string; context_length?: number; context_window?: number; max_tokens?: number };
+type Listed = {
+	id: string;
+	name?: string;
+	context_length?: number;
+	context_window?: number;
+	max_tokens?: number;
+	max_output_tokens?: number;
+	capabilities?: { reasoning?: boolean; vision?: boolean };
+};
 
 async function get(e: Endpoint, path: string, signal?: AbortSignal): Promise<any> {
 	const url = new URL(path, `${e.baseUrl}/`).href;
@@ -155,11 +176,11 @@ async function probe(e: Endpoint) {
 			const k = known(d.id, e.catalog);
 			const def = {
 				name: m.name ?? d.id,
-				reasoning: false,
-				input: ["text" as const],
+				reasoning: m.capabilities?.reasoning ?? false,
+				input: m.capabilities?.vision ? ["text" as const, "image" as const] : ["text" as const],
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 				contextWindow: m.context_length ?? m.context_window ?? 128000,
-				maxTokens: m.max_tokens ?? 16384,
+				maxTokens: m.max_output_tokens ?? m.max_tokens ?? 16384,
 				...k,
 				...d,
 				compat: { ...k.compat, ...e.preset?.compat, ...d.compat },
