@@ -173,10 +173,11 @@ RUN --mount=type=secret,id=npm_token,uid=1000,required=true \
 	rm -rf ~/.npm
 
 # A pi extension that adds the models of the endpoints listed in
-# ~/.pi/agent/endpoints (see the file), with presets that pick a few models
-# from services that list hundreds.
+# ~/.pi/agent/endpoints (the image lists the usual cyac service names), with
+# presets that pick a few models from services that list hundreds.
 COPY --chown=ubuntu:ubuntu pi-endpoints.ts /home/ubuntu/.pi/agent/extensions/pi-endpoints.ts
 COPY --chown=ubuntu:ubuntu endpoint-presets.json /home/ubuntu/.pi/agent/endpoint-presets.json
+COPY --chown=ubuntu:ubuntu endpoints /home/ubuntu/.pi/agent/endpoints
 USER root
 
 RUN rm -rf /etc/update-motd.d/* /etc/motd
