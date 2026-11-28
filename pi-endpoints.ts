@@ -2,14 +2,18 @@
 // in ~/.config/pi-endpoints, usually cyac services such as a cyac-inject
 // proxy that adds the real API key on its way out. Each line is
 //
-//	[name] <base URL> [api key]
+//	[name] <base URL> [key=<api key>] [models=<pattern>,...]
 //
 // with the base URL up to and including /v1, so that <base>/models lists the
 // models and <base>/chat/completions serves them. The name becomes the
 // provider in /model and defaults to the first label of the URL's host
 // (nanogpt for http://nanogpt.cyac.internal:8080/v1). The key takes pi's
 // syntax ($VAR, !command) and defaults to a placeholder, since pi hides
-// models it has no key for. # starts a comment.
+// models it has no key for. models= keeps only the model IDs that match one
+// of its patterns, where * matches anything. Without it, an endpoint whose
+// name or URL matches a PICKS entry (NanoGPT, which lists hundreds of
+// models) keeps that entry's patterns, and any other endpoint keeps all.
+// # starts a comment.
 //
 // Every endpoint is asked once at startup and again whenever /model opens,
 // so models that appear later show up there. Edit the file, then /reload.
@@ -22,7 +26,30 @@ import { getBuiltinModels, getBuiltinProviders } from "@earendil-works/pi-ai/pro
 const FILE = join(homedir(), ".config", "pi-endpoints");
 const TIMEOUT_MS = 3000;
 
-type Endpoint = { name: string; baseUrl: string; apiKey: string };
+// Default models= for endpoints that list too many to scroll through.
+const PICKS: [RegExp, string[]][] = [
+	[
+		/nano-?gpt/i,
+		[
+			"anthropic/claude-opus-*",
+			"anthropic/claude-sonnet-*",
+			"openai/gpt-5*",
+			"google/gemini-*-pro*",
+			"moonshotai/kimi-k2*",
+			"z-ai/glm-*",
+			"qwen/qwen3-coder*",
+		],
+	],
+];
+
+type Endpoint = { name: string; baseUrl: string; apiKey: string; keep?: RegExp };
+
+// glob turns patterns such as openai/gpt-5* into one anchored,
+// case-insensitive expression.
+function glob(patterns: string[]): RegExp {
+	const escaped = patterns.map((p) => p.split("*").map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(".*"));
+	return new RegExp(`^(?:${escaped.join("|")})$`, "i");
+}
 
 export function parse(text: string): Endpoint[] {
 	const out: Endpoint[] = [];
@@ -30,15 +57,20 @@ export function parse(text: string): Endpoint[] {
 		const fields = raw.replace(/#.*/, "").trim().split(/\s+/).filter(Boolean);
 		if (fields.length === 0) continue;
 		const at = fields.findIndex((f) => /^https?:\/\//.test(f));
-		if (at < 0 || at > 1 || fields.length > at + 2) {
-			console.warn(`[pi-endpoints] ${FILE}: skipping "${raw.trim()}": want [name] <url> [key]`);
+		const opts = new Map(fields.slice(at + 1).map((f) => [f.slice(0, f.indexOf("=")), f.slice(f.indexOf("=") + 1)]));
+		if (at < 0 || at > 1 || [...opts.keys()].some((k) => k !== "key" && k !== "models")) {
+			console.warn(`[pi-endpoints] ${FILE}: skipping "${raw.trim()}": want [name] <url> [key=...] [models=...]`);
 			continue;
 		}
 		const baseUrl = fields[at].replace(/\/+$/, "");
+		const name = at === 1 ? fields[0] : new URL(baseUrl).hostname.split(".")[0];
+		const models = opts.get("models")?.split(",").filter(Boolean);
+		const picks = PICKS.find(([re]) => re.test(name) || re.test(baseUrl))?.[1];
 		out.push({
-			name: at === 1 ? fields[0] : new URL(baseUrl).hostname.split(".")[0],
+			name,
 			baseUrl,
-			apiKey: fields[at + 1] ?? "none",
+			apiKey: opts.get("key") || "none",
+			keep: models?.length ? glob(models) : picks && glob(picks),
 		});
 	}
 	return out;
@@ -73,7 +105,7 @@ async function probe(e: Endpoint, signal?: AbortSignal) {
 	const { data } = (await res.json()) as { data?: Listed[] };
 	if (!Array.isArray(data)) throw new Error(`${e.baseUrl}/models: no data list`);
 	return data
-		.filter((m) => typeof m?.id === "string")
+		.filter((m) => typeof m?.id === "string" && (!e.keep || e.keep.test(m.id)))
 		.map((m) => {
 			const k = known(m.id);
 			return {

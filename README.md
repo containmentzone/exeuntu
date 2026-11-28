@@ -35,15 +35,20 @@ like a small VM under [cyac](https://github.com/containmentzone/cyacrt):
 - A pi extension, `/usr/local/share/pi/pi-endpoints.ts`, adds the models
   of OpenAI-compatible endpoints listed in `~/.config/pi-endpoints`,
   usually cyac services such as a `cyac-inject` proxy. One per line,
-  `[name] <base URL> [api key]`, with the URL up to and including `/v1`:
+  `[name] <base URL> [key=<api key>] [models=<pattern>,...]`, with the URL
+  up to and including `/v1`:
 
   ```
   nanogpt http://nanogpt.cyac.internal:8080/v1
+  local http://llm.cyac.internal:8080/v1 models=qwen*,llama*
   ```
 
   The name is the provider in `/model` (default: the first label of the
   host). The key takes pi's syntax (`$VAR`, `!command`) and can be left out
-  when a proxy adds the real one. pi asks each endpoint's `/models` at
+  when a proxy adds the real one. `models=` keeps the model IDs that match
+  (`*` matches anything). Without it, an endpoint whose name or URL says
+  NanoGPT keeps a short list of picks from the extension's `PICKS` (it
+  lists hundreds), and any other endpoint keeps all of its models. pi asks each endpoint's `/models` at
   startup and whenever `/model` opens; after editing the file, `/reload`.
   Context window, reasoning and image input come from the endpoint if it
   says, else from pi's catalog when the model ID matches one it knows.
